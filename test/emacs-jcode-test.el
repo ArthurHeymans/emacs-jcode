@@ -147,6 +147,34 @@
     (should (equal (emacs-jcode--session-display-title active) "server alpha"))
     (should (equal (emacs-jcode--session-display-title closed) "beta"))))
 
+(ert-deftest emacs-jcode-list-refresh-is-command ()
+  (should (commandp #'emacs-jcode-list-refresh)))
+
+(ert-deftest emacs-jcode-send-uses-native-connection-when-present ()
+  (let* ((chat (generate-new-buffer " *jcode-test-native-send-chat*"))
+         (input (generate-new-buffer " *jcode-test-native-send-input*"))
+         (connection (emacs-jcode--make-native-connection
+                      :chat chat :input input :session-id "s-native" :cwd "/tmp"))
+         sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'emacs-jcode-native-message)
+                   (lambda (conn text)
+                     (setq sent (list conn text)))))
+          (with-current-buffer chat
+            (emacs-jcode-chat-mode)
+            (setq emacs-jcode--native-connection connection))
+          (with-current-buffer input
+            (emacs-jcode-input-mode)
+            (setq emacs-jcode--chat-buffer chat)
+            (insert "hello native")
+            (emacs-jcode-send)
+            (should (equal (buffer-string) "")))
+          (should (equal sent (list connection "hello native")))
+          (with-current-buffer chat
+            (should (string-match-p "hello native" (buffer-string)))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest emacs-jcode-session-status-string-handles-structured-status ()
   (should (equal (emacs-jcode--session-status-string
                   '((Crashed (message . "Terminal or window closed (SIGHUP)"))))

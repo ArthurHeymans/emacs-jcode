@@ -8,10 +8,14 @@
 (require 'subr-x)
 (require 'emacs-jcode-ui)
 (require 'emacs-jcode-render)
+(require 'emacs-jcode-native)
 
 (declare-function emacs-jcode-session-prompt "emacs-jcode-acp")
 (declare-function emacs-jcode-session-cancel "emacs-jcode-acp")
 (declare-function emacs-jcode-session-close "emacs-jcode-acp")
+(declare-function emacs-jcode-native-message "emacs-jcode-native" (connection content))
+(declare-function emacs-jcode-native-cancel "emacs-jcode-native" (connection))
+(declare-function emacs-jcode-native-close "emacs-jcode-native" (connection))
 
 (defvar emacs-jcode-input-ring-size 100
   "Maximum number of prompts to keep in input history.")
@@ -19,6 +23,18 @@
 (defvar-local emacs-jcode--input-ring nil)
 (defvar-local emacs-jcode--input-ring-index nil)
 (defvar-local emacs-jcode--input-saved nil)
+
+(defun emacs-jcode--chat-buffer-for-command ()
+  "Return chat buffer relevant to the current jcode command."
+  (if (derived-mode-p 'emacs-jcode-chat-mode)
+      (current-buffer)
+    emacs-jcode--chat-buffer))
+
+(defun emacs-jcode--native-connection-for-chat (chat)
+  "Return native connection from CHAT, if any."
+  (and (buffer-live-p chat)
+       (boundp 'emacs-jcode--native-connection)
+       (buffer-local-value 'emacs-jcode--native-connection chat)))
 
 (defun emacs-jcode--input-ring ()
   "Return current input history ring."
@@ -65,33 +81,42 @@
   (interactive)
   (let* ((text (string-trim (buffer-string)))
          (chat emacs-jcode--chat-buffer)
+         (native (emacs-jcode--native-connection-for-chat chat))
          (session (and (buffer-live-p chat)
                        (buffer-local-value 'emacs-jcode--session chat))))
     (when (string-empty-p text) (user-error "Prompt is empty"))
-    (unless session (user-error "No jcode session"))
-    (when (emacs-jcode-session-busy session)
+    (unless (or native session) (user-error "No jcode session"))
+    (when (and session (emacs-jcode-session-busy session))
       (user-error "Jcode is busy; wait for the current request or cancel it"))
     (emacs-jcode--history-add text)
     (delete-region (point-min) (point-max))
     (emacs-jcode-render-user chat text)
     (emacs-jcode--section chat "Assistant" 'emacs-jcode-assistant-face)
-    (emacs-jcode-session-prompt session text)))
+    (if native
+        (emacs-jcode-native-message native text)
+      (emacs-jcode-session-prompt session text))))
 
 (defun emacs-jcode-cancel ()
   "Cancel the active jcode response."
   (interactive)
-  (let* ((chat (if (derived-mode-p 'emacs-jcode-chat-mode) (current-buffer) emacs-jcode--chat-buffer))
+  (let* ((chat (emacs-jcode--chat-buffer-for-command))
+         (native (emacs-jcode--native-connection-for-chat chat))
          (session (and (buffer-live-p chat) (buffer-local-value 'emacs-jcode--session chat))))
-    (unless session (user-error "No jcode session"))
-    (emacs-jcode-session-cancel session)))
+    (cond
+     (native (emacs-jcode-native-cancel native))
+     (session (emacs-jcode-session-cancel session))
+     (t (user-error "No jcode session")))))
 
 (defun emacs-jcode-disconnect ()
   "Detach Emacs from current jcode session."
   (interactive)
-  (let* ((chat (if (derived-mode-p 'emacs-jcode-chat-mode) (current-buffer) emacs-jcode--chat-buffer))
+  (let* ((chat (emacs-jcode--chat-buffer-for-command))
+         (native (emacs-jcode--native-connection-for-chat chat))
          (session (and (buffer-live-p chat) (buffer-local-value 'emacs-jcode--session chat))))
-    (unless session (user-error "No jcode session"))
-    (emacs-jcode-session-close session)))
+    (cond
+     (native (emacs-jcode-native-close native))
+     (session (emacs-jcode-session-close session))
+     (t (user-error "No jcode session")))))
 
 (provide 'emacs-jcode-input)
 ;;; emacs-jcode-input.el ends here

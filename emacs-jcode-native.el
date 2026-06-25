@@ -74,6 +74,14 @@ history."
     (emacs-jcode-native--send connection (append `(:type ,type :id ,id) fields))
     id))
 
+(defun emacs-jcode-native-message (connection content)
+  "Send CONTENT as a native message through CONNECTION."
+  (emacs-jcode-native--request connection "message" :content content))
+
+(defun emacs-jcode-native-cancel (connection)
+  "Cancel current native generation for CONNECTION."
+  (emacs-jcode-native--request connection "cancel"))
+
 (defun emacs-jcode-native-close (connection)
   "Close native CONNECTION and cancel its refresh timer."
   (when connection

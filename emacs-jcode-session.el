@@ -204,6 +204,7 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
 
 (defun emacs-jcode-list-refresh ()
   "Refresh the jcode session list buffer."
+  (interactive)
   (setq tabulated-list-entries
         (mapcar #'emacs-jcode--session-list-entry
                 (emacs-jcode-list-sessions-data emacs-jcode--session-list-directory)))
