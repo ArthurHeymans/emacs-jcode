@@ -1,4 +1,4 @@
-#+title: emacs-jcode
+#+title: jcode
 
 Emacs frontend for [[https://github.com/1jehuang/jcode][jcode]] using the Agent Client Protocol backend exposed by =jcode acp=.
 
@@ -10,7 +10,7 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 - cancel and disconnect commands
 - attach/resume by session id, using ACP-compatible =cwd= and prompt content blocks
 - completion picker and tabulated list for previous jcode sessions from =~/.jcode/sessions=
-- =emacs-jcode-current= to reconnect to the latest session for the current project
+- =jcode-current= to reconnect to the latest session for the current project
 - Pi-like header line with current session/status/model/project metadata
 - previous-session opening replays history by default so old chats are visible
 - =session/update= rendering for assistant/user chunks and tool updates
@@ -20,7 +20,7 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 * Requirements
 
 - Emacs 29.1+
-- =jcode= in =exec-path=, or set =emacs-jcode-program=
+- =jcode= in =exec-path=, or set =jcode-program=
 
 * Usage
 
@@ -32,14 +32,14 @@ Load the package, then run:
 
 Commands:
 
-- =M-x emacs-jcode= creates or focuses a jcode session for the current project.
-- =C-u M-x emacs-jcode= picks an existing session id and loads it.
-- =M-x emacs-jcode-current= resumes the latest known session for the current project.
-- =C-u M-x emacs-jcode-current= resumes the globally latest known session.
-- =M-x emacs-jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay or =r= to resume without replay.
-- =M-x emacs-jcode-resume= picks a session id and resumes without full replay.
-- =C-u M-x emacs-jcode-resume= loads with history replay.
-- =M-x emacs-jcode-plan= opens the implementation plan.
+- =M-x jcode= creates or focuses a jcode session for the current project.
+- =C-u M-x jcode= picks an existing session id and loads it.
+- =M-x jcode-current= resumes the latest known session for the current project.
+- =C-u M-x jcode-current= resumes the globally latest known session.
+- =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay or =r= to resume without replay.
+- =M-x jcode-resume= picks a session id and resumes without full replay.
+- =C-u M-x jcode-resume= loads with history replay.
+- =M-x jcode-plan= opens the implementation plan.
 
 Chat and input buffers show a compact header with session title/id, status, model, and project directory.  Keybindings remain available via mode maps, but are not shown in the header.
 
@@ -60,7 +60,7 @@ Chat buffer keys:
 
 #+begin_src sh
 nix develop
-emacs -Q --batch -L . -L test -l test/emacs-jcode-test.el -f ert-run-tests-batch-and-exit
+emacs -Q --batch -L . -L test -l test/jcode-test.el -f ert-run-tests-batch-and-exit
 nix flake check
 #+end_src
 

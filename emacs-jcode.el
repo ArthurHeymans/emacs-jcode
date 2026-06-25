@@ -1,4 +1,4 @@
-;;; emacs-jcode.el --- Emacs frontend for jcode -*- lexical-binding: t; -*-
+;;; jcode.el --- Emacs frontend for jcode -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "29.1"))
@@ -10,11 +10,11 @@
 ;; Emacs frontend for jcode using `jcode acp'.
 ;;
 ;; Commands:
-;;   M-x emacs-jcode          Open/create a jcode session in the current project.
-;;   M-x emacs-jcode-resume   Attach to an existing jcode session by id.
-;;   M-x emacs-jcode-current  Resume latest session for current project.
-;;   M-x emacs-jcode-list     List known sessions.
-;;   M-x emacs-jcode-plan     Open the implementation plan.
+;;   M-x jcode          Open/create a jcode session in the current project.
+;;   M-x jcode-resume   Attach to an existing jcode session by id.
+;;   M-x jcode-current  Resume latest session for current project.
+;;   M-x jcode-list     List known sessions.
+;;   M-x jcode-plan     Open the implementation plan.
 
 ;;; Code:
 
@@ -24,79 +24,99 @@
 (require 'emacs-jcode-acp)
 (require 'emacs-jcode-input)
 
-(declare-function emacs-jcode-apply-session-info-to-buffers "emacs-jcode-session"
+(declare-function jcode-apply-session-info-to-buffers "jcode-session"
                   (session-id chat input))
-(declare-function emacs-jcode-session-teardown "emacs-jcode-acp" (session))
-(declare-function emacs-jcode-native-open-session "emacs-jcode-native"
+(declare-function jcode-session-teardown "jcode-acp" (session))
+(declare-function jcode-native-open-session "jcode-native"
                   (session-id cwd chat input))
 
 ;;;###autoload
-(defun emacs-jcode (&optional session-id)
+(defun jcode (&optional session-id)
   "Open or create a jcode session for the current project.
 With prefix argument, prompt for SESSION-ID and load that session."
   (interactive
    (list (when current-prefix-arg
-           (emacs-jcode-read-session-id (emacs-jcode--project-directory) "Load jcode session: "))))
-  (let* ((dir (emacs-jcode--project-directory))
-         (buffers (emacs-jcode--make-buffers dir session-id))
+           (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
+  (let* ((dir (jcode--project-directory))
+         (buffers (jcode--make-buffers dir session-id))
          (chat (car buffers))
          (input (cdr buffers)))
     (when session-id
-      (emacs-jcode-apply-session-info-to-buffers session-id chat input))
-    (emacs-jcode--display-buffers chat input)
-    (unless (buffer-local-value 'emacs-jcode--session chat)
-      (emacs-jcode-session-start dir chat input session-id nil))
+      (jcode-apply-session-info-to-buffers session-id chat input))
+    (jcode--display-buffers chat input)
+    (unless (buffer-local-value 'jcode--session chat)
+      (jcode-session-start dir chat input session-id nil))
     chat))
 
 ;;;###autoload
-(defun emacs-jcode-resume (session-id &optional full-load)
+(defun jcode-resume (session-id &optional full-load)
   "Resume jcode SESSION-ID without replay.
 With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
-  (interactive (list (emacs-jcode-read-session-id (emacs-jcode--project-directory)) current-prefix-arg))
-  (let* ((dir (emacs-jcode--project-directory))
-         (buffers (emacs-jcode--make-buffers dir session-id))
+  (interactive (list (jcode-read-session-id (jcode--project-directory)) current-prefix-arg))
+  (let* ((dir (jcode--project-directory))
+         (buffers (jcode--make-buffers dir session-id))
          (chat (car buffers))
          (input (cdr buffers)))
-    (emacs-jcode-apply-session-info-to-buffers session-id chat input)
-    (emacs-jcode--display-buffers chat input)
-    (when (and full-load (buffer-local-value 'emacs-jcode--session chat))
-      (emacs-jcode-session-teardown (buffer-local-value 'emacs-jcode--session chat))
-      (with-current-buffer chat (setq emacs-jcode--session nil))
-      (with-current-buffer input (setq emacs-jcode--session nil))
-      (emacs-jcode--clear-chat-buffer chat))
-    (unless (buffer-local-value 'emacs-jcode--native-connection chat)
-      (emacs-jcode-native-open-session session-id dir chat input))
+    (jcode-apply-session-info-to-buffers session-id chat input)
+    (jcode--display-buffers chat input)
+    (when (and full-load (buffer-local-value 'jcode--session chat))
+      (jcode-session-teardown (buffer-local-value 'jcode--session chat))
+      (with-current-buffer chat (setq jcode--session nil))
+      (with-current-buffer input (setq jcode--session nil))
+      (jcode--clear-chat-buffer chat))
+    (unless (buffer-local-value 'jcode--native-connection chat)
+      (jcode-native-open-session session-id dir chat input))
     chat))
 
 ;;;###autoload
-(defun emacs-jcode-current (&optional any-directory)
+(defun jcode-current (&optional any-directory)
   "Resume the latest jcode session for the current project.
 With prefix argument ANY-DIRECTORY, resume the globally latest known session."
   (interactive "P")
-  (let* ((dir (emacs-jcode--project-directory))
-         (info (emacs-jcode-latest-session dir (not any-directory))))
+  (let* ((dir (jcode--project-directory))
+         (info (jcode-latest-session dir (not any-directory))))
     (unless info
       (user-error "No jcode session found%s"
                   (if any-directory "" " for current project")))
-    (emacs-jcode-resume (emacs-jcode-session-info-id info) t)))
+    (jcode-resume (jcode-session-info-id info) t)))
 
 ;;;###autoload
-(defun emacs-jcode-list ()
+(defun jcode-list ()
   "List known jcode sessions.  RET loads with replay, `r' resumes without replay."
   (interactive)
   (let ((buffer (get-buffer-create "*jcode-sessions*"))
-        (dir (emacs-jcode--project-directory)))
+        (dir (jcode--project-directory)))
     (with-current-buffer buffer
-      (emacs-jcode-list-mode)
-      (setq emacs-jcode--session-list-directory dir)
-      (emacs-jcode-list-refresh))
+      (jcode-list-mode)
+      (setq jcode--session-list-directory dir)
+      (jcode-list-refresh))
     (pop-to-buffer buffer)))
 
 ;;;###autoload
-(defun emacs-jcode-plan ()
-  "Open the emacs-jcode implementation plan."
+(defun jcode-plan ()
+  "Open the jcode implementation plan."
   (interactive)
   (find-file (expand-file-name "PLAN.org" (file-name-directory (or load-file-name buffer-file-name)))))
 
+(defun jcode--undefine-old-emacs-prefixed-functions ()
+  "Remove stale `emacs-jcode*' functions left by older loaded versions."
+  (mapatoms
+   (lambda (symbol)
+     (when (and (fboundp symbol)
+                (string-prefix-p "emacs-jcode" (symbol-name symbol)))
+       (fmakunbound symbol)))))
+
+(jcode--undefine-old-emacs-prefixed-functions)
+
+;; Backward compatibility for old custom variables only.  Commands/functions
+;; intentionally use the shorter `jcode-*' prefix.
+(defvaralias 'emacs-jcode-program 'jcode-program)
+(defvaralias 'emacs-jcode-acp-extra-args 'jcode-acp-extra-args)
+(defvaralias 'emacs-jcode-input-window-height 'jcode-input-window-height)
+(defvaralias 'emacs-jcode-sessions-directory 'jcode-sessions-directory)
+(defvaralias 'emacs-jcode-native-poll-interval 'jcode-native-poll-interval)
+(defvaralias 'emacs-jcode-native-take-over-active-session
+  'jcode-native-take-over-active-session)
+
 (provide 'emacs-jcode)
-;;; emacs-jcode.el ends here
+;;; jcode.el ends here

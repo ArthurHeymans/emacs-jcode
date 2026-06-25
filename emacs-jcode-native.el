@@ -1,4 +1,4 @@
-;;; emacs-jcode-native.el --- Native socket backend for emacs-jcode -*- lexical-binding: t; -*-
+;;; jcode-native.el --- Native socket backend for jcode -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,12 +11,12 @@
 (require 'emacs-jcode-render)
 (require 'emacs-jcode-session)
 
-(cl-defstruct (emacs-jcode-native-connection (:constructor emacs-jcode--make-native-connection))
+(cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
   process chat input session-id cwd next-id line-buffer poll-timer last-history-size)
 
-(defvar-local emacs-jcode--native-connection nil)
+(defvar-local jcode--native-connection nil)
 
-(defcustom emacs-jcode-native-poll-interval 1.0
+(defcustom jcode-native-poll-interval 1.0
   "Seconds between native history refreshes for passive session views.
 
 The daemon only pushes live deltas to the owning client for ordinary sessions.
@@ -24,9 +24,9 @@ Passive viewers therefore subscribe for the initial history and poll
 `get_history' as a non-invasive fallback so current-session buffers keep
 updating without taking over another UI client."
   :type 'number
-  :group 'emacs-jcode)
+  :group 'jcode)
 
-(defcustom emacs-jcode-native-take-over-active-session t
+(defcustom jcode-native-take-over-active-session t
   "Whether native resume should take over the target live session.
 
 When non-nil, Emacs asks the daemon to make this connection the live client for
@@ -35,11 +35,11 @@ sessions because the daemon only sends in-progress deltas to the owning client.
 When nil, Emacs remains a passive viewer and relies on polling committed
 history."
   :type 'boolean
-  :group 'emacs-jcode)
+  :group 'jcode)
 
-(defun emacs-jcode-native-socket-path (&optional directory)
+(defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
-  (let ((file (emacs-jcode--servers-file directory)))
+  (let ((file (jcode--servers-file directory)))
     (or (when (file-readable-p file)
           (condition-case nil
               (with-temp-buffer
@@ -53,7 +53,7 @@ history."
         (concat (or (file-remote-p (or directory default-directory)) "")
                 "/run/user/" (number-to-string (user-uid)) "/jcode.sock"))))
 
-(defun emacs-jcode-native--json-read (line)
+(defun jcode-native--json-read (line)
   "Read native protocol JSON LINE."
   (let ((json-object-type 'alist)
         (json-array-type 'vector)
@@ -61,158 +61,158 @@ history."
         (json-false :false))
     (json-read-from-string line)))
 
-(defun emacs-jcode-native--send (connection object)
+(defun jcode-native--send (connection object)
   "Send native protocol OBJECT through CONNECTION."
   (process-send-string
-   (emacs-jcode-native-connection-process connection)
+   (jcode-native-connection-process connection)
    (concat (json-serialize object :false-object :false :null-object nil) "\n")))
 
-(defun emacs-jcode-native--request (connection type &rest fields)
+(defun jcode-native--request (connection type &rest fields)
   "Send request TYPE with FIELDS through CONNECTION."
-  (let ((id (1+ (emacs-jcode-native-connection-next-id connection))))
-    (setf (emacs-jcode-native-connection-next-id connection) id)
-    (emacs-jcode-native--send connection (append `(:type ,type :id ,id) fields))
+  (let ((id (1+ (jcode-native-connection-next-id connection))))
+    (setf (jcode-native-connection-next-id connection) id)
+    (jcode-native--send connection (append `(:type ,type :id ,id) fields))
     id))
 
-(defun emacs-jcode-native-message (connection content)
+(defun jcode-native-message (connection content)
   "Send CONTENT as a native message through CONNECTION."
-  (emacs-jcode-native--request connection "message" :content content))
+  (jcode-native--request connection "message" :content content))
 
-(defun emacs-jcode-native-cancel (connection)
+(defun jcode-native-cancel (connection)
   "Cancel current native generation for CONNECTION."
-  (emacs-jcode-native--request connection "cancel"))
+  (jcode-native--request connection "cancel"))
 
-(defun emacs-jcode-native-close (connection)
+(defun jcode-native-close (connection)
   "Close native CONNECTION and cancel its refresh timer."
   (when connection
-    (when-let ((timer (emacs-jcode-native-connection-poll-timer connection)))
+    (when-let ((timer (jcode-native-connection-poll-timer connection)))
       (cancel-timer timer)
-      (setf (emacs-jcode-native-connection-poll-timer connection) nil))
-    (when-let ((proc (emacs-jcode-native-connection-process connection)))
+      (setf (jcode-native-connection-poll-timer connection) nil))
+    (when-let ((proc (jcode-native-connection-process connection)))
       (when (process-live-p proc)
         (delete-process proc)))))
 
-(defun emacs-jcode-native--kill-buffer-hook ()
+(defun jcode-native--kill-buffer-hook ()
   "Close native connection associated with the current buffer."
-  (when (bound-and-true-p emacs-jcode--native-connection)
-    (emacs-jcode-native-close emacs-jcode--native-connection)))
+  (when (bound-and-true-p jcode--native-connection)
+    (jcode-native-close jcode--native-connection)))
 
-(defun emacs-jcode-native--poll (connection)
+(defun jcode-native--poll (connection)
   "Refresh passive native CONNECTION from daemon history."
-  (if (and (emacs-jcode-native-connection-process connection)
-           (process-live-p (emacs-jcode-native-connection-process connection)))
+  (if (and (jcode-native-connection-process connection)
+           (process-live-p (jcode-native-connection-process connection)))
       (condition-case nil
-          (emacs-jcode-native--request connection "get_history")
+          (jcode-native--request connection "get_history")
         (error nil))
-    (emacs-jcode-native-close connection)))
+    (jcode-native-close connection)))
 
-(defun emacs-jcode-native--render-history-message (chat message)
+(defun jcode-native--render-history-message (chat message)
   "Render native history MESSAGE into CHAT."
   (let ((role (alist-get 'role message))
         (content (or (alist-get 'content message) "")))
     (pcase role
-      ("user" (emacs-jcode-render-user chat content))
-      ("assistant" (emacs-jcode-render-assistant-message chat content))
-      ("tool" (emacs-jcode-render-tool chat `((title . "tool") (status . "done") (content . ,content)) t))
-      (_ (emacs-jcode-render-info chat (format "%s: %s" role content))))))
+      ("user" (jcode-render-user chat content))
+      ("assistant" (jcode-render-assistant-message chat content))
+      ("tool" (jcode-render-tool chat `((title . "tool") (status . "done") (content . ,content)) t))
+      (_ (jcode-render-info chat (format "%s: %s" role content))))))
 
-(defun emacs-jcode-native--render-history (connection event)
+(defun jcode-native--render-history (connection event)
   "Render native history EVENT for CONNECTION."
-  (let* ((chat (emacs-jcode-native-connection-chat connection))
+  (let* ((chat (jcode-native-connection-chat connection))
          (messages (append (alist-get 'messages event) nil))
          (history-size (length (prin1-to-string messages))))
-    (unless (equal history-size (emacs-jcode-native-connection-last-history-size connection))
-      (setf (emacs-jcode-native-connection-last-history-size connection) history-size)
-      (emacs-jcode--clear-chat-buffer chat)
-      (emacs-jcode--session-set-display-native connection event)
-      (mapc (lambda (message) (emacs-jcode-native--render-history-message chat message))
+    (unless (equal history-size (jcode-native-connection-last-history-size connection))
+      (setf (jcode-native-connection-last-history-size connection) history-size)
+      (jcode--clear-chat-buffer chat)
+      (jcode--session-set-display-native connection event)
+      (mapc (lambda (message) (jcode-native--render-history-message chat message))
             messages))))
 
-(defun emacs-jcode-native--sentinel (proc _event)
+(defun jcode-native--sentinel (proc _event)
   "Clean native connection state when PROC exits."
-  (when-let ((connection (process-get proc 'emacs-jcode-native-connection)))
-    (emacs-jcode-native-close connection)))
+  (when-let ((connection (process-get proc 'jcode-native-connection)))
+    (jcode-native-close connection)))
 
-(defun emacs-jcode--session-set-display-native (connection event)
+(defun jcode--session-set-display-native (connection event)
   "Apply native EVENT metadata to CONNECTION buffers."
   (let ((model (alist-get 'provider_model event))
         (server (alist-get 'server_name event)))
-    (dolist (buffer (list (emacs-jcode-native-connection-chat connection)
-                          (emacs-jcode-native-connection-input connection)))
-      (emacs-jcode--set-display-metadata
+    (dolist (buffer (list (jcode-native-connection-chat connection)
+                          (jcode-native-connection-input connection)))
+      (jcode--set-display-metadata
        buffer
-       :session-id (emacs-jcode-native-connection-session-id connection)
-       :title (or server (emacs-jcode-native-connection-session-id connection))
+       :session-id (jcode-native-connection-session-id connection)
+       :title (or server (jcode-native-connection-session-id connection))
        :status "Live"
        :model model))))
 
-(defun emacs-jcode-native--handle-event (connection event)
+(defun jcode-native--handle-event (connection event)
   "Handle native protocol EVENT for CONNECTION."
   (let ((type (alist-get 'type event))
-        (chat (emacs-jcode-native-connection-chat connection)))
+        (chat (jcode-native-connection-chat connection)))
     (pcase type
-      ("history" (emacs-jcode-native--render-history connection event))
-      ("text_delta" (emacs-jcode-render-assistant-message chat (alist-get 'text event)))
-      ("text_replace" (emacs-jcode-render-assistant-message chat (alist-get 'text event)))
-      ("tool_start" (emacs-jcode-render-tool chat event nil))
-      ("tool_input" (emacs-jcode-render-tool chat event t))
-      ("tool_done" (emacs-jcode-render-tool chat event t))
+      ("history" (jcode-native--render-history connection event))
+      ("text_delta" (jcode-render-assistant-message chat (alist-get 'text event)))
+      ("text_replace" (jcode-render-assistant-message chat (alist-get 'text event)))
+      ("tool_start" (jcode-render-tool chat event nil))
+      ("tool_input" (jcode-render-tool chat event t))
+      ("tool_done" (jcode-render-tool chat event t))
       ("session_renamed"
-       (dolist (buffer (list (emacs-jcode-native-connection-chat connection)
-                             (emacs-jcode-native-connection-input connection)))
-         (emacs-jcode--set-display-metadata buffer :title (alist-get 'display_title event))))
-      ("error" (emacs-jcode-render-error chat (or (alist-get 'message event) (format "%S" event))))
+       (dolist (buffer (list (jcode-native-connection-chat connection)
+                             (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata buffer :title (alist-get 'display_title event))))
+      ("error" (jcode-render-error chat (or (alist-get 'message event) (format "%S" event))))
       (_ nil))))
 
-(defun emacs-jcode-native--filter (proc string)
+(defun jcode-native--filter (proc string)
   "Handle native protocol output STRING from PROC."
-  (let* ((connection (process-get proc 'emacs-jcode-native-connection))
-         (buffer (concat (or (emacs-jcode-native-connection-line-buffer connection) "") string))
+  (let* ((connection (process-get proc 'jcode-native-connection))
+         (buffer (concat (or (jcode-native-connection-line-buffer connection) "") string))
          lines)
     (while (string-match "\n" buffer)
       (push (substring buffer 0 (match-beginning 0)) lines)
       (setq buffer (substring buffer (match-end 0))))
-    (setf (emacs-jcode-native-connection-line-buffer connection) buffer)
+    (setf (jcode-native-connection-line-buffer connection) buffer)
     (dolist (line (nreverse lines))
       (unless (string-empty-p (string-trim line))
         (condition-case err
-            (emacs-jcode-native--handle-event connection (emacs-jcode-native--json-read line))
-          (error (emacs-jcode-render-error
-                  (emacs-jcode-native-connection-chat connection)
+            (jcode-native--handle-event connection (jcode-native--json-read line))
+          (error (jcode-render-error
+                  (jcode-native-connection-chat connection)
                   (format "native parse error: %S" err))))))))
 
-(defun emacs-jcode-native-open-session (session-id cwd chat input)
+(defun jcode-native-open-session (session-id cwd chat input)
   "Open native live SESSION-ID for CWD into CHAT and INPUT."
-  (let* ((socket (emacs-jcode-native-socket-path cwd))
+  (let* ((socket (jcode-native-socket-path cwd))
          (proc (make-network-process :name "jcode-native"
                                      :buffer (generate-new-buffer " *jcode-native* ")
                                      :family 'local
                                      :service socket
                                      :coding 'utf-8-emacs-unix
                                      :noquery t))
-         (connection (emacs-jcode--make-native-connection
+         (connection (jcode--make-native-connection
                       :process proc :chat chat :input input :session-id session-id
                       :cwd cwd :next-id 0 :line-buffer "")))
-    (set-process-filter proc #'emacs-jcode-native--filter)
-    (set-process-sentinel proc #'emacs-jcode-native--sentinel)
-    (process-put proc 'emacs-jcode-native-connection connection)
+    (set-process-filter proc #'jcode-native--filter)
+    (set-process-sentinel proc #'jcode-native--sentinel)
+    (process-put proc 'jcode-native-connection connection)
     (with-current-buffer chat
-      (setq emacs-jcode--native-connection connection)
-      (add-hook 'kill-buffer-hook #'emacs-jcode-native--kill-buffer-hook nil t))
+      (setq jcode--native-connection connection)
+      (add-hook 'kill-buffer-hook #'jcode-native--kill-buffer-hook nil t))
     (with-current-buffer input
-      (setq emacs-jcode--native-connection connection)
-      (add-hook 'kill-buffer-hook #'emacs-jcode-native--kill-buffer-hook nil t))
-    (emacs-jcode-native--request
+      (setq jcode--native-connection connection)
+      (add-hook 'kill-buffer-hook #'jcode-native--kill-buffer-hook nil t))
+    (jcode-native--request
      connection "subscribe"
      :working_dir cwd
      :target_session_id session-id
-     :client_has_local_history (if emacs-jcode-native-take-over-active-session t :false)
-     :allow_session_takeover (if emacs-jcode-native-take-over-active-session t :false))
-    (setf (emacs-jcode-native-connection-poll-timer connection)
-          (run-with-timer emacs-jcode-native-poll-interval
-                          emacs-jcode-native-poll-interval
-                          #'emacs-jcode-native--poll connection))
+     :client_has_local_history (if jcode-native-take-over-active-session t :false)
+     :allow_session_takeover (if jcode-native-take-over-active-session t :false))
+    (setf (jcode-native-connection-poll-timer connection)
+          (run-with-timer jcode-native-poll-interval
+                          jcode-native-poll-interval
+                          #'jcode-native--poll connection))
     connection))
 
 (provide 'emacs-jcode-native)
-;;; emacs-jcode-native.el ends here
+;;; jcode-native.el ends here

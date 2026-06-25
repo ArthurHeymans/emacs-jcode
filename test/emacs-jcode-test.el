@@ -1,4 +1,4 @@
-;;; emacs-jcode-test.el --- Tests for emacs-jcode -*- lexical-binding: t; -*-
+;;; jcode-test.el --- Tests for jcode -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,23 +7,23 @@
 (require 'ert)
 (require 'emacs-jcode)
 
-(ert-deftest emacs-jcode-acp-prompt-params-use-content-blocks ()
-  (let ((session (emacs-jcode--make-session :id "s1" :cwd "/tmp")))
-    (should (equal (emacs-jcode--acp-prompt-params session "hello")
+(ert-deftest jcode-acp-prompt-params-use-content-blocks ()
+  (let ((session (jcode--make-session :id "s1" :cwd "/tmp")))
+    (should (equal (jcode--acp-prompt-params session "hello")
                    '(:sessionId "s1" :prompt [(:type "text" :text "hello")])))))
 
-(ert-deftest emacs-jcode-acp-load-params-include-cwd ()
-  (let ((session (emacs-jcode--make-session :cwd "/tmp/project")))
-    (should (equal (emacs-jcode--acp-load-params session "abc")
+(ert-deftest jcode-acp-load-params-include-cwd ()
+  (let ((session (jcode--make-session :cwd "/tmp/project")))
+    (should (equal (jcode--acp-load-params session "abc")
                    '(:sessionId "abc" :cwd "/tmp/project")))))
 
-(ert-deftest emacs-jcode-render-session-update-agent-message ()
+(ert-deftest jcode-render-session-update-agent-message ()
   (let* ((chat (generate-new-buffer " *jcode-test-chat*"))
-         (session (emacs-jcode--make-session :id "s1" :chat-buffer chat)))
+         (session (jcode--make-session :id "s1" :chat-buffer chat)))
     (unwind-protect
         (progn
-          (with-current-buffer chat (emacs-jcode-chat-mode))
-          (emacs-jcode-handle-notification
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-handle-notification
            session "session/update"
            '((sessionId . "s1")
              (update . ((sessionUpdate . "agent_message_chunk")
@@ -32,13 +32,13 @@
             (should (string-match-p "hello" (buffer-string)))))
       (kill-buffer chat))))
 
-(ert-deftest emacs-jcode-render-session-update-user-message ()
+(ert-deftest jcode-render-session-update-user-message ()
   (let* ((chat (generate-new-buffer " *jcode-test-chat*"))
-         (session (emacs-jcode--make-session :id "s1" :chat-buffer chat)))
+         (session (jcode--make-session :id "s1" :chat-buffer chat)))
     (unwind-protect
         (progn
-          (with-current-buffer chat (emacs-jcode-chat-mode))
-          (emacs-jcode-handle-notification
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-handle-notification
            session "session/update"
            '((sessionId . "s1")
              (update . ((sessionUpdate . "user_message_chunk")
@@ -48,32 +48,32 @@
             (should (string-match-p "hi" (buffer-string)))))
       (kill-buffer chat))))
 
-(ert-deftest emacs-jcode-sanitize-text-strips-terminal-controls ()
-  (should (equal (emacs-jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
+(ert-deftest jcode-sanitize-text-strips-terminal-controls ()
+  (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
-  (should (equal (emacs-jcode--sanitize-text "]0;title\aTests pass")
+  (should (equal (jcode--sanitize-text "]0;title\aTests pass")
                  "Tests pass")))
 
-(ert-deftest emacs-jcode-input-history-roundtrip ()
+(ert-deftest jcode-input-history-roundtrip ()
   (with-temp-buffer
-    (emacs-jcode-input-mode)
+    (jcode-input-mode)
     (insert "first")
-    (emacs-jcode--history-add (buffer-string))
+    (jcode--history-add (buffer-string))
     (delete-region (point-min) (point-max))
     (insert "second")
-    (emacs-jcode--history-add (buffer-string))
+    (jcode--history-add (buffer-string))
     (delete-region (point-min) (point-max))
-    (emacs-jcode-previous-input)
+    (jcode-previous-input)
     (should (equal (buffer-string) "second"))
-    (emacs-jcode-previous-input)
+    (jcode-previous-input)
     (should (equal (buffer-string) "first"))
-    (emacs-jcode-next-input)
+    (jcode-next-input)
     (should (equal (buffer-string) "second"))))
 
-(ert-deftest emacs-jcode-send-errors-while-busy ()
+(ert-deftest jcode-send-errors-while-busy ()
   (let* ((chat (generate-new-buffer " *jcode-test-chat*"))
          (input (generate-new-buffer " *jcode-test-input*"))
-         (session (emacs-jcode--make-session :id "s1"
+         (session (jcode--make-session :id "s1"
                                              :cwd "/tmp"
                                              :chat-buffer chat
                                              :input-buffer input
@@ -81,47 +81,47 @@
     (unwind-protect
         (progn
           (with-current-buffer chat
-            (emacs-jcode-chat-mode)
-            (setq emacs-jcode--session session))
+            (jcode-chat-mode)
+            (setq jcode--session session))
           (with-current-buffer input
-            (emacs-jcode-input-mode)
-            (setq emacs-jcode--chat-buffer chat)
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
             (insert "hello")
-            (should-error (emacs-jcode-send) :type 'user-error)))
+            (should-error (jcode-send) :type 'user-error)))
       (kill-buffer chat)
       (kill-buffer input))))
 
-(ert-deftest emacs-jcode-read-session-info-parses-metadata ()
-  (let ((file (make-temp-file "emacs-jcode-session" nil ".json"
+(ert-deftest jcode-read-session-info-parses-metadata ()
+  (let ((file (make-temp-file "jcode-session" nil ".json"
                               "{\"id\":\"s1\",\"title\":\"Title\",\"short_name\":\"short\",\"working_dir\":\"/tmp/project\",\"status\":\"Active\",\"model\":\"gpt\",\"provider_key\":\"openai\",\"updated_at\":\"2026-01-02T00:00:00Z\"}")))
     (unwind-protect
-        (let ((info (emacs-jcode--read-session-info file)))
-          (should (equal (emacs-jcode-session-info-id info) "s1"))
-          (should (equal (emacs-jcode-session-info-title info) "Title"))
-          (should (equal (emacs-jcode-session-info-working-dir info) "/tmp/project"))
-          (should (equal (emacs-jcode-session-info-model info) "gpt")))
+        (let ((info (jcode--read-session-info file)))
+          (should (equal (jcode-session-info-id info) "s1"))
+          (should (equal (jcode-session-info-title info) "Title"))
+          (should (equal (jcode-session-info-working-dir info) "/tmp/project"))
+          (should (equal (jcode-session-info-model info) "gpt")))
       (delete-file file))))
 
-(ert-deftest emacs-jcode-read-session-info-parses-large-transcripts ()
+(ert-deftest jcode-read-session-info-parses-large-transcripts ()
   (let* ((large (make-string 150000 ?x))
          (file (make-temp-file
-                "emacs-jcode-large-session" nil ".json"
+                "jcode-large-session" nil ".json"
                 (format "{\"id\":\"large\",\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":%S}]}],\"working_dir\":\"/tmp/project\",\"short_name\":\"fixture\",\"status\":\"Active\",\"updated_at\":\"2026-01-02T00:00:00Z\"}"
                         large))))
     (unwind-protect
-        (let ((info (emacs-jcode--read-session-info file)))
+        (let ((info (jcode--read-session-info file)))
           (should info)
-          (should (equal (emacs-jcode-session-info-id info) "large"))
-          (should (equal (emacs-jcode-session-info-short-name info) "fixture"))
-          (should (equal (emacs-jcode-session-info-status info) "Active")))
+          (should (equal (jcode-session-info-id info) "large"))
+          (should (equal (jcode-session-info-short-name info) "fixture"))
+          (should (equal (jcode-session-info-status info) "Active")))
       (delete-file file))))
 
-(ert-deftest emacs-jcode-latest-session-filters-current-directory ()
-  (let* ((root (make-temp-file "emacs-jcode-sessions" t))
+(ert-deftest jcode-latest-session-filters-current-directory ()
+  (let* ((root (make-temp-file "jcode-sessions" t))
          (project-a (file-name-as-directory (expand-file-name "a" root)))
          (project-b (file-name-as-directory (expand-file-name "b" root)))
          (sessions (file-name-as-directory (expand-file-name "sessions" root)))
-         (emacs-jcode-sessions-directory sessions))
+         (jcode-sessions-directory sessions))
     (unwind-protect
         (progn
           (make-directory project-a)
@@ -133,41 +133,55 @@
                         nil (expand-file-name "other.json" sessions))
           (write-region (format "{\"id\":\"new\",\"short_name\":\"new\",\"working_dir\":%S,\"updated_at\":\"2026-01-02T00:00:00Z\"}" project-a)
                         nil (expand-file-name "new.json" sessions))
-          (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a t)) "new"))
-          (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a nil)) "other")))
+          (should (equal (jcode-session-info-id (jcode-latest-session project-a t)) "new"))
+          (should (equal (jcode-session-info-id (jcode-latest-session project-a nil)) "other")))
       (delete-directory root t))))
 
-(ert-deftest emacs-jcode-session-display-title-prefixes-active-server ()
-  (let ((active (emacs-jcode--make-session-info :short-name "alpha"
+(ert-deftest jcode-session-display-title-prefixes-active-server ()
+  (let ((active (jcode--make-session-info :short-name "alpha"
                                                 :status "Active"
                                                 :server-name "server"))
-        (closed (emacs-jcode--make-session-info :short-name "beta"
+        (closed (jcode--make-session-info :short-name "beta"
                                                 :status "Closed"
                                                 :server-name "server")))
-    (should (equal (emacs-jcode--session-display-title active) "server alpha"))
-    (should (equal (emacs-jcode--session-display-title closed) "beta"))))
+    (should (equal (jcode--session-display-title active) "server alpha"))
+    (should (equal (jcode--session-display-title closed) "beta"))))
 
-(ert-deftest emacs-jcode-list-refresh-is-command ()
-  (should (commandp #'emacs-jcode-list-refresh)))
+(ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
+  (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
+                     jcode-send jcode-cancel jcode-disconnect))
+    (should (commandp command)))
+  (dolist (old '(emacs-jcode emacs-jcode-resume emacs-jcode-current
+                 emacs-jcode-list emacs-jcode-plan emacs-jcode-send
+                 emacs-jcode-cancel emacs-jcode-disconnect))
+    (should-not (fboundp old)))
+  (fset 'emacs-jcode-stale-test (lambda () t))
+  (should (fboundp 'emacs-jcode-stale-test))
+  (jcode--undefine-old-emacs-prefixed-functions)
+  (should-not (fboundp 'emacs-jcode-stale-test))
+  (should (eq (symbol-value 'emacs-jcode-program) (symbol-value 'jcode-program))))
 
-(ert-deftest emacs-jcode-send-uses-native-connection-when-present ()
+(ert-deftest jcode-list-refresh-is-command ()
+  (should (commandp #'jcode-list-refresh)))
+
+(ert-deftest jcode-send-uses-native-connection-when-present ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-send-chat*"))
          (input (generate-new-buffer " *jcode-test-native-send-input*"))
-         (connection (emacs-jcode--make-native-connection
+         (connection (jcode--make-native-connection
                       :chat chat :input input :session-id "s-native" :cwd "/tmp"))
          sent)
     (unwind-protect
-        (cl-letf (((symbol-function 'emacs-jcode-native-message)
+        (cl-letf (((symbol-function 'jcode-native-message)
                    (lambda (conn text)
                      (setq sent (list conn text)))))
           (with-current-buffer chat
-            (emacs-jcode-chat-mode)
-            (setq emacs-jcode--native-connection connection))
+            (jcode-chat-mode)
+            (setq jcode--native-connection connection))
           (with-current-buffer input
-            (emacs-jcode-input-mode)
-            (setq emacs-jcode--chat-buffer chat)
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
             (insert "hello native")
-            (emacs-jcode-send)
+            (jcode-send)
             (should (equal (buffer-string) "")))
           (should (equal sent (list connection "hello native")))
           (with-current-buffer chat
@@ -175,34 +189,34 @@
       (kill-buffer chat)
       (kill-buffer input))))
 
-(ert-deftest emacs-jcode-session-status-string-handles-structured-status ()
-  (should (equal (emacs-jcode--session-status-string
+(ert-deftest jcode-session-status-string-handles-structured-status ()
+  (should (equal (jcode--session-status-string
                   '((Crashed (message . "Terminal or window closed (SIGHUP)"))))
                  "Crashed: Terminal or window closed (SIGHUP)"))
-  (let ((info (emacs-jcode--make-session-info
+  (let ((info (jcode--make-session-info
                :id "s-crash"
                :short-name "broken"
                :status '((Crashed (message . "Terminal or window closed (SIGHUP)"))))))
-    (should (equal (aref (cadr (emacs-jcode--session-list-entry info)) 1)
+    (should (equal (aref (cadr (jcode--session-list-entry info)) 1)
                    "Crashed: Terminal or window closed (SIGHUP)"))))
 
-(ert-deftest emacs-jcode-native-json-read-parses-history ()
-  (let ((event (emacs-jcode-native--json-read
+(ert-deftest jcode-native-json-read-parses-history ()
+  (let ((event (jcode-native--json-read
                 "{\"type\":\"history\",\"provider_model\":\"gpt\",\"messages\":[{\"role\":\"assistant\",\"content\":\"hello\"}]}")))
     (should (equal (alist-get 'type event) "history"))
     (should (equal (alist-get 'provider_model event) "gpt"))
     (should (equal (alist-get 'content (aref (alist-get 'messages event) 0)) "hello"))))
 
-(ert-deftest emacs-jcode-native-history-renders-messages-and-metadata ()
+(ert-deftest jcode-native-history-renders-messages-and-metadata ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-chat*"))
          (input (generate-new-buffer " *jcode-test-native-input*"))
-         (connection (emacs-jcode--make-native-connection
+         (connection (jcode--make-native-connection
                       :chat chat :input input :session-id "s-native" :cwd "/tmp")))
     (unwind-protect
         (progn
-          (with-current-buffer chat (emacs-jcode-chat-mode))
-          (with-current-buffer input (emacs-jcode-input-mode))
-          (emacs-jcode-native--render-history
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (jcode-native--render-history
            connection
            '((type . "history")
              (server_name . "garden")
@@ -212,13 +226,13 @@
           (with-current-buffer chat
             (should (string-match-p "hi" (buffer-string)))
             (should (string-match-p "hello" (buffer-string)))
-            (should (equal emacs-jcode--display-model "gpt-test"))))
+            (should (equal jcode--display-model "gpt-test"))))
       (kill-buffer chat)
       (kill-buffer input))))
 
-(ert-deftest emacs-jcode-killing-chat-kills-input ()
+(ert-deftest jcode-killing-chat-kills-input ()
   (let* ((dir default-directory)
-         (buffers (emacs-jcode--make-buffers dir "linked-test"))
+         (buffers (jcode--make-buffers dir "linked-test"))
          (chat (car buffers))
          (input (cdr buffers)))
     (should (buffer-live-p chat))
@@ -227,5 +241,5 @@
     (should-not (buffer-live-p chat))
     (should-not (buffer-live-p input))))
 
-(provide 'emacs-jcode-test)
-;;; emacs-jcode-test.el ends here
+(provide 'jcode-test)
+;;; jcode-test.el ends here

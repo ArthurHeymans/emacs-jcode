@@ -1,4 +1,4 @@
-;;; emacs-jcode-render.el --- Render jcode ACP events -*- lexical-binding: t; -*-
+;;; jcode-render.el --- Render jcode ACP events -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,9 +7,9 @@
 (require 'emacs-jcode-ui)
 (require 'subr-x)
 
-(declare-function emacs-jcode-session-chat-buffer "emacs-jcode-acp")
+(declare-function jcode-session-chat-buffer "jcode-acp")
 
-(defun emacs-jcode--sanitize-text (text)
+(defun jcode--sanitize-text (text)
   "Strip terminal control sequences and undesirable control chars from TEXT."
   (when text
     (let ((s text))
@@ -24,43 +24,43 @@
       ;; Keep newline, tab, and carriage return; remove other C0 controls.
       (replace-regexp-in-string "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]" "" s))))
 
-(defun emacs-jcode--alist-get-any (keys alist)
+(defun jcode--alist-get-any (keys alist)
   "Return first present value for KEYS in ALIST."
   (catch 'found
     (dolist (key keys)
       (let ((cell (assq key alist)))
         (when cell (throw 'found (cdr cell)))))))
 
-(defun emacs-jcode--content-text (content)
+(defun jcode--content-text (content)
   "Extract textual content from ACP CONTENT value."
   (cond
-   ((stringp content) (emacs-jcode--sanitize-text content))
+   ((stringp content) (jcode--sanitize-text content))
    ((vectorp content)
     (mapconcat (lambda (item)
-                 (or (and (listp item) (emacs-jcode--alist-get-any '(text content) item)) ""))
+                 (or (and (listp item) (jcode--alist-get-any '(text content) item)) ""))
                content ""))
    ((listp content)
-    (or (emacs-jcode--alist-get-any '(text content) content)
+    (or (jcode--alist-get-any '(text content) content)
         (format "%S" content)))
    (content (format "%S" content))))
 
-(defun emacs-jcode--event-text (params)
+(defun jcode--event-text (params)
   "Extract text from ACP notification PARAMS."
-  (or (emacs-jcode--alist-get-any '(text delta chunk) params)
-      (emacs-jcode--content-text (alist-get 'content params))))
+  (or (jcode--alist-get-any '(text delta chunk) params)
+      (jcode--content-text (alist-get 'content params))))
 
-(defun emacs-jcode-render-user (chat text)
+(defun jcode-render-user (chat text)
   "Render user TEXT in CHAT."
-  (emacs-jcode--section chat "You" 'emacs-jcode-user-face)
-  (emacs-jcode--append chat (concat (emacs-jcode--sanitize-text text) "\n")))
+  (jcode--section chat "You" 'jcode-user-face)
+  (jcode--append chat (concat (jcode--sanitize-text text) "\n")))
 
-(defun emacs-jcode-render-assistant-delta (chat text)
+(defun jcode-render-assistant-delta (chat text)
   "Render assistant delta TEXT in CHAT."
-  (let ((text (emacs-jcode--sanitize-text text)))
+  (let ((text (jcode--sanitize-text text)))
     (when (and text (not (string-empty-p text)))
-      (emacs-jcode--append chat text))))
+      (jcode--append chat text))))
 
-(defun emacs-jcode--last-heading (buffer)
+(defun jcode--last-heading (buffer)
   "Return the last simple setext heading title in BUFFER, or nil."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -69,73 +69,73 @@
         (when (re-search-backward "^\\(You\\|Assistant\\)\n=+\n" nil t)
           (match-string-no-properties 1))))))
 
-(defun emacs-jcode-render-assistant-message (chat text)
+(defun jcode-render-assistant-message (chat text)
   "Render assistant message TEXT in CHAT with a heading when needed."
-  (unless (equal (emacs-jcode--last-heading chat) "Assistant")
-    (emacs-jcode--section chat "Assistant" 'emacs-jcode-assistant-face))
-  (emacs-jcode-render-assistant-delta chat text))
+  (unless (equal (jcode--last-heading chat) "Assistant")
+    (jcode--section chat "Assistant" 'jcode-assistant-face))
+  (jcode-render-assistant-delta chat text))
 
-(defun emacs-jcode-render-tool (chat params &optional update)
+(defun jcode-render-tool (chat params &optional update)
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
-  (let* ((name (or (emacs-jcode--alist-get-any '(name title toolCallId toolCallId) params) "tool"))
-         (status (or (emacs-jcode--alist-get-any '(status state) params) (if update "update" "start")))
-         (text (or (emacs-jcode--event-text params)
-                   (when-let ((raw (emacs-jcode--alist-get-any '(rawInput input output) params)))
+  (let* ((name (or (jcode--alist-get-any '(name title toolCallId toolCallId) params) "tool"))
+         (status (or (jcode--alist-get-any '(status state) params) (if update "update" "start")))
+         (text (or (jcode--event-text params)
+                   (when-let ((raw (jcode--alist-get-any '(rawInput input output) params)))
                      (if (stringp raw) raw (format "%S" raw))))))
-    (emacs-jcode--append chat (format "\n[%s: %s]\n" name status) 'emacs-jcode-tool-face)
+    (jcode--append chat (format "\n[%s: %s]\n" name status) 'jcode-tool-face)
     (when (and text (not (string-empty-p text)))
-      (emacs-jcode--append chat (concat (emacs-jcode--sanitize-text text) "\n") 'emacs-jcode-tool-face))))
+      (jcode--append chat (concat (jcode--sanitize-text text) "\n") 'jcode-tool-face))))
 
-(defun emacs-jcode-render-info (chat text)
+(defun jcode-render-info (chat text)
   "Render informational TEXT in CHAT."
-  (emacs-jcode--append chat (concat "\n" text "\n") 'emacs-jcode-dim-face))
+  (jcode--append chat (concat "\n" text "\n") 'jcode-dim-face))
 
-(defun emacs-jcode-render-error (chat text)
+(defun jcode-render-error (chat text)
   "Render error TEXT in CHAT."
-  (emacs-jcode--append chat (concat "\nError: " text "\n") 'emacs-jcode-error-face))
+  (jcode--append chat (concat "\nError: " text "\n") 'jcode-error-face))
 
-(defun emacs-jcode--handle-session-update (session params)
+(defun jcode--handle-session-update (session params)
   "Render ACP session/update PARAMS for SESSION."
   (let* ((update (alist-get 'update params))
          (kind (alist-get 'sessionUpdate update)))
     (pcase kind
       ("agent_message_chunk"
-       (emacs-jcode-render-assistant-message
-        (emacs-jcode-session-chat-buffer session)
-        (emacs-jcode--event-text update)))
+       (jcode-render-assistant-message
+        (jcode-session-chat-buffer session)
+        (jcode--event-text update)))
       ("user_message_chunk"
-       (emacs-jcode-render-user
-        (emacs-jcode-session-chat-buffer session)
-        (or (emacs-jcode--event-text update) "")))
+       (jcode-render-user
+        (jcode-session-chat-buffer session)
+        (or (jcode--event-text update) "")))
       ("tool_call"
-       (emacs-jcode-render-tool (emacs-jcode-session-chat-buffer session) update nil))
+       (jcode-render-tool (jcode-session-chat-buffer session) update nil))
       ("tool_call_update"
-       (emacs-jcode-render-tool (emacs-jcode-session-chat-buffer session) update t))
+       (jcode-render-tool (jcode-session-chat-buffer session) update t))
       (_
-       (emacs-jcode-render-info
-        (emacs-jcode-session-chat-buffer session)
+       (jcode-render-info
+        (jcode-session-chat-buffer session)
         (format "session/update %S" params))))))
 
-(defun emacs-jcode-handle-notification (session method params)
+(defun jcode-handle-notification (session method params)
   "Render ACP notification METHOD/PARAMS for SESSION."
-  (let ((chat (emacs-jcode-session-chat-buffer session)))
+  (let ((chat (jcode-session-chat-buffer session)))
     (pcase method
       ("session/update"
-       (emacs-jcode--handle-session-update session params))
+       (jcode--handle-session-update session params))
       ("agent_message_chunk"
-       (emacs-jcode-render-assistant-message chat (emacs-jcode--event-text params)))
+       (jcode-render-assistant-message chat (jcode--event-text params)))
       ("user_message_chunk"
-       (emacs-jcode-render-user chat (or (emacs-jcode--event-text params) "")))
+       (jcode-render-user chat (or (jcode--event-text params) "")))
       ("tool_call"
-       (emacs-jcode-render-tool chat params nil))
+       (jcode-render-tool chat params nil))
       ("tool_call_update"
-       (emacs-jcode-render-tool chat params t))
+       (jcode-render-tool chat params t))
       ("session_info_update"
-       (emacs-jcode-render-info chat (format "Session: %S" params)))
+       (jcode-render-info chat (format "Session: %S" params)))
       ("_jcode/server_event"
-       (emacs-jcode-render-info chat (format "jcode event: %S" params)))
+       (jcode-render-info chat (format "jcode event: %S" params)))
       (_
-       (emacs-jcode-render-info chat (format "%s %S" method params))))))
+       (jcode-render-info chat (format "%s %S" method params))))))
 
 (provide 'emacs-jcode-render)
-;;; emacs-jcode-render.el ends here
+;;; jcode-render.el ends here

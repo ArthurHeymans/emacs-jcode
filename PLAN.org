@@ -1,4 +1,4 @@
-#+title: emacs-jcode implementation plan
+#+title: jcode implementation plan
 
 * Goal
 
@@ -92,16 +92,16 @@ Proposed modules:
 
 | File | Purpose |
 |------|---------|
-| =emacs-jcode.el= | entry point, autoloads, user commands |
-| =emacs-jcode-ui.el= | buffers, modes, faces, window layout, shared state |
-| =emacs-jcode-render.el= | chat rendering, markdown, tool/reasoning folds, diffs |
-| =emacs-jcode-input.el= | prompt buffer, history, send/abort/steer, file completion |
-| =emacs-jcode-session.el= | session manager, list/resume/attach, buffer/session mapping |
-| =emacs-jcode-transport.el= | backend-neutral request/event interface |
-| =emacs-jcode-acp.el= | =jcode acp= JSON-RPC stdio backend |
-| =emacs-jcode-socket.el= | optional direct jcode socket backend |
-| =emacs-jcode-tramp.el= | remote process launch, connection-local config, server identity |
-| =emacs-jcode-menu.el= | transient menu for model/session/provider actions |
+| =jcode.el= | entry point, autoloads, user commands |
+| =jcode-ui.el= | buffers, modes, faces, window layout, shared state |
+| =jcode-render.el= | chat rendering, markdown, tool/reasoning folds, diffs |
+| =jcode-input.el= | prompt buffer, history, send/abort/steer, file completion |
+| =jcode-session.el= | session manager, list/resume/attach, buffer/session mapping |
+| =jcode-transport.el= | backend-neutral request/event interface |
+| =jcode-acp.el= | =jcode acp= JSON-RPC stdio backend |
+| =jcode-socket.el= | optional direct jcode socket backend |
+| =jcode-tramp.el= | remote process launch, connection-local config, server identity |
+| =jcode-menu.el= | transient menu for model/session/provider actions |
 
 Reuse UX patterns from =pi-coding-agent.el=, but keep protocol code separate enough that ACP and socket backends can coexist.
 
@@ -109,12 +109,12 @@ Reuse UX patterns from =pi-coding-agent.el=, but keep protocol code separate eno
 
 The session manager should expose:
 
-- =emacs-jcode=: open/create session for current =default-directory=.
-- =emacs-jcode-resume=: select an existing jcode session and attach.
-- =emacs-jcode-list=: tabulated/consult UI with live/known sessions.
-- =emacs-jcode-rename-session=: rename current session.
-- =emacs-jcode-disconnect=: detach Emacs client without stopping jcode session.
-- =emacs-jcode-stop-session=: request stop/close when supported.
+- =jcode=: open/create session for current =default-directory=.
+- =jcode-resume=: select an existing jcode session and attach.
+- =jcode-list=: tabulated/consult UI with live/known sessions.
+- =jcode-rename-session=: rename current session.
+- =jcode-disconnect=: detach Emacs client without stopping jcode session.
+- =jcode-stop-session=: request stop/close when supported.
 
 Important state:
 
@@ -174,7 +174,7 @@ Recommended near-term path:
 
 1. Prototype jcode via agent-shell first.
 2. Verify =jcode acp= compatibility with agent-shell session creation, prompt, cancel, resume/load, tool rendering, and permission flows.
-3. If the UX is acceptable, keep =emacs-jcode= as a thin jcode-specific package that registers an agent-shell backend, adds TRAMP defaults, and optionally consumes jcode raw events.
+3. If the UX is acceptable, keep =jcode= as a thin jcode-specific package that registers an agent-shell backend, adds TRAMP defaults, and optionally consumes jcode raw events.
 4. Only build a custom Pi-like two-buffer UI if agent-shell's comint/viewport UX cannot be shaped close enough.
 
 Tradeoff: agent-shell gives a lot immediately but its default UX is a shell/viewport, not exactly =pi-coding-agent.el='s two-buffer chat+input layout.  A custom package gives exact UI control but duplicates a large amount of already-working ACP plumbing.
@@ -191,7 +191,7 @@ Shape:
 
 - create a jcode =agent-shell= buffer using a jcode config;
 - display that shell buffer as the read-only/chat pane;
-- create a separate =emacs-jcode-input-mode= prompt buffer;
+- create a separate =jcode-input-mode= prompt buffer;
 - on =C-c C-c=, send input with =agent-shell--insert-to-shell-buffer :submit t=;
 - if busy, use =agent-shell-queue-request= or its queue internals;
 - on abort, call =agent-shell-interrupt=;
@@ -234,7 +234,7 @@ agent-shell has support for =session/list= and can prompt/latest-select when the
 - explicit resume by id should work;
 - session/load vs session/resume restore should work;
 - agent-shell's built-in prompt/latest session picker may fall back to new session for jcode;
-- =emacs-jcode= still needs its own session manager or an upstream jcode ACP =session/list= method for a polished session picker.
+- =jcode= still needs its own session manager or an upstream jcode ACP =session/list= method for a polished session picker.
 
 ** Stability/history assessment
 
@@ -279,7 +279,7 @@ This avoids direct remote Unix socket handling and naturally supports =/ssh:=, =
 ** Milestone 0: skeleton
 
 - Package skeleton and flake.
-- Customizable =emacs-jcode-program=.
+- Customizable =jcode-program=.
 - Backend interface and fake transport tests.
 
 ** Milestone 1: ACP chat MVP
