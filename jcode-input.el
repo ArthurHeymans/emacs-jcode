@@ -55,7 +55,8 @@
                        (mapconcat (lambda (pattern)
                                     (format "-not -path '*/%s/*'" pattern))
                                   jcode--file-exclude-patterns
-                                  " "))))
+                                  " ")
+                       " 2>/dev/null")))
           (mapcar (lambda (file)
                     (string-remove-prefix "./" file))
                   (seq-filter (lambda (file)
@@ -66,7 +67,10 @@
   "Return project-relative file candidates for the current buffer."
   (unless (jcode--file-cache-valid-p)
     (setq jcode--project-files-cache
-          (jcode--find-project-files (jcode--project-directory))
+          (condition-case nil
+              (jcode--find-project-files (jcode--project-directory))
+            (file-error nil)
+            (permission-denied nil))
           jcode--project-files-cache-time
           (current-time)))
   jcode--project-files-cache)
@@ -88,7 +92,13 @@
   "Trigger project file completion after @ at a word boundary."
   (when (and (eq last-command-event ?@)
              (jcode--at-trigger-p))
-    (run-at-time 0 nil #'jcode--complete-file-reference)))
+    (let ((buffer (current-buffer)))
+      (run-at-time 0 nil
+                   (lambda ()
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (when (derived-mode-p 'jcode-input-mode)
+                           (jcode--complete-file-reference)))))))))
 
 (defun jcode--file-reference-capf ()
   "Completion-at-point for @file references."
@@ -114,9 +124,12 @@
          (base (file-name-nondirectory path))
          (expanded-dir (expand-file-name (or dir "") default-directory)))
     (when (file-directory-p expanded-dir)
-      (mapcar (lambda (file) (concat (or dir "") file))
-              (cl-remove-if (lambda (file) (member file '("." ".." "./" "../")))
-                            (file-name-all-completions base expanded-dir))))))
+      (condition-case nil
+          (mapcar (lambda (file) (concat (or dir "") file))
+                  (cl-remove-if (lambda (file) (member file '("." ".." "./" "../")))
+                                (file-name-all-completions base expanded-dir)))
+        (file-error nil)
+        (permission-denied nil)))))
 
 (defun jcode--path-capf ()
   "Completion-at-point for paths beginning with ./, ../, ~/, or /."
