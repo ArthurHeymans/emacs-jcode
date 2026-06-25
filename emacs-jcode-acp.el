@@ -165,6 +165,17 @@
   (setq emacs-jcode--sessions (delq session emacs-jcode--sessions))
   (emacs-jcode-render-info (emacs-jcode-session-chat-buffer session) "Disconnected"))
 
+(defun emacs-jcode-session-teardown (session)
+  "Silently detach SESSION and remove it from live session tracking."
+  (when session
+    (ignore-errors
+      (when-let ((conn (emacs-jcode-session-connection session)))
+        (jsonrpc-shutdown conn)))
+    (when-let ((proc (emacs-jcode-session-process session)))
+      (when (process-live-p proc)
+        (delete-process proc)))
+    (setq emacs-jcode--sessions (delq session emacs-jcode--sessions))))
+
 (defun emacs-jcode-session-start (cwd chat input &optional session-id resume-only)
   "Start ACP client for CWD and buffers CHAT/INPUT.
 When SESSION-ID is non-nil, load or resume it depending on RESUME-ONLY."

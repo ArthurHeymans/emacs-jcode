@@ -25,6 +25,7 @@
 
 (declare-function emacs-jcode-apply-session-info-to-buffers "emacs-jcode-session"
                   (session-id chat input))
+(declare-function emacs-jcode-session-teardown "emacs-jcode-acp" (session))
 
 ;;;###autoload
 (defun emacs-jcode (&optional session-id)
@@ -55,6 +56,11 @@ With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
          (input (cdr buffers)))
     (emacs-jcode-apply-session-info-to-buffers session-id chat input)
     (emacs-jcode--display-buffers chat input)
+    (when (and full-load (buffer-local-value 'emacs-jcode--session chat))
+      (emacs-jcode-session-teardown (buffer-local-value 'emacs-jcode--session chat))
+      (with-current-buffer chat (setq emacs-jcode--session nil))
+      (with-current-buffer input (setq emacs-jcode--session nil))
+      (emacs-jcode--clear-chat-buffer chat))
     (unless (buffer-local-value 'emacs-jcode--session chat)
       (emacs-jcode-session-start dir chat input session-id (not full-load)))
     chat))

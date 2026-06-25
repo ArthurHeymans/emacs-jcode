@@ -141,5 +141,16 @@
     (should (equal (emacs-jcode--session-display-title active) "server alpha"))
     (should (equal (emacs-jcode--session-display-title closed) "beta"))))
 
+(ert-deftest emacs-jcode-killing-chat-kills-input ()
+  (let* ((dir default-directory)
+         (buffers (emacs-jcode--make-buffers dir "linked-test"))
+         (chat (car buffers))
+         (input (cdr buffers)))
+    (should (buffer-live-p chat))
+    (should (buffer-live-p input))
+    (kill-buffer chat)
+    (should-not (buffer-live-p chat))
+    (should-not (buffer-live-p input))))
+
 (provide 'emacs-jcode-test)
 ;;; emacs-jcode-test.el ends here

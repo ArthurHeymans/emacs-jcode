@@ -39,6 +39,20 @@
 (defvar-local emacs-jcode--display-title nil)
 (defvar-local emacs-jcode--display-status nil)
 (defvar-local emacs-jcode--display-model nil)
+(defvar-local emacs-jcode--killing-linked-buffer nil)
+
+(defun emacs-jcode--kill-linked-buffer ()
+  "Kill the chat/input buffer paired with the current jcode buffer."
+  (unless emacs-jcode--killing-linked-buffer
+    (let ((linked (cond
+                   ((derived-mode-p 'emacs-jcode-chat-mode)
+                    emacs-jcode--input-buffer)
+                   ((derived-mode-p 'emacs-jcode-input-mode)
+                    emacs-jcode--chat-buffer))))
+      (when (buffer-live-p linked)
+        (with-current-buffer linked
+          (setq emacs-jcode--killing-linked-buffer t))
+        (kill-buffer linked)))))
 
 (defun emacs-jcode--header-line ()
   "Return Pi-like header line text for current jcode buffer."
@@ -77,7 +91,8 @@
   "Major mode for jcode chat buffers."
   (setq-local buffer-read-only t)
   (setq-local truncate-lines nil)
-  (setq-local header-line-format '(:eval (emacs-jcode--header-line))))
+  (setq-local header-line-format '(:eval (emacs-jcode--header-line)))
+  (add-hook 'kill-buffer-hook #'emacs-jcode--kill-linked-buffer nil t))
 
 (defvar emacs-jcode-input-mode-map
   (let ((map (make-sparse-keymap)))
@@ -91,7 +106,15 @@
 
 (define-derived-mode emacs-jcode-input-mode text-mode "Jcode-Input"
   "Major mode for composing jcode prompts."
-  (setq-local header-line-format '(:eval (emacs-jcode--header-line))))
+  (setq-local header-line-format '(:eval (emacs-jcode--header-line)))
+  (add-hook 'kill-buffer-hook #'emacs-jcode--kill-linked-buffer nil t))
+
+(defun emacs-jcode--clear-chat-buffer (chat)
+  "Erase CHAT buffer contents."
+  (when (buffer-live-p chat)
+    (with-current-buffer chat
+      (let ((inhibit-read-only t))
+        (erase-buffer)))))
 
 (defun emacs-jcode--project-directory ()
   "Return the current project directory, falling back to `default-directory'."
