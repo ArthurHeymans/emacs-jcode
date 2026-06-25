@@ -1,0 +1,61 @@
+#+title: emacs-jcode
+
+Emacs frontend for [[https://github.com/1jehuang/jcode][jcode]] using the Agent Client Protocol backend exposed by =jcode acp=.
+
+This is currently an early direct-ACP implementation with a Pi-like two-buffer layout:
+
+- read-only rendered chat buffer
+- separate prompt composition buffer
+- prompt history with =M-p= / =M-n=
+- cancel and disconnect commands
+- attach/resume by session id
+- TRAMP-aware ACP process launching via =start-file-process=
+
+* Requirements
+
+- Emacs 29.1+
+- =jcode= in =exec-path=, or set =emacs-jcode-program=
+
+* Usage
+
+Load the package, then run:
+
+#+begin_src emacs-lisp
+(require 'emacs-jcode)
+#+end_src
+
+Commands:
+
+- =M-x emacs-jcode= creates or focuses a jcode session for the current project.
+- =C-u M-x emacs-jcode= prompts for a session id and loads it.
+- =M-x emacs-jcode-resume= prompts for a session id and resumes without full replay.
+- =C-u M-x emacs-jcode-resume= loads with history replay.
+- =M-x emacs-jcode-plan= opens the implementation plan.
+
+Input buffer keys:
+
+- =C-c C-c= send prompt
+- =C-c C-k= cancel active response
+- =C-c C-d= disconnect Emacs client
+- =M-p= / =M-n= prompt history
+
+Chat buffer keys:
+
+- =C-c C-k= cancel active response
+- =C-c C-d= disconnect Emacs client
+- =q= quit window
+
+* Development
+
+#+begin_src sh
+nix develop
+nix flake check
+#+end_src
+
+The flake exposes:
+
+- =packages.default=: the Emacs package
+- =packages.jcode=: a pinned build of upstream jcode from =github:1jehuang/jcode=
+- =apps.jcode=: run the packaged jcode binary
+
+See [[file:PLAN.org][PLAN.org]] for the broader roadmap.

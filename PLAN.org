@@ -1,0 +1,339 @@
+#+title: emacs-jcode implementation plan
+
+* Goal
+
+Build an Emacs frontend for [[https://github.com/1jehuang/jcode][jcode]] with a UX close to =pi-coding-agent.el=: a rendered chat buffer, a separate prompt/input buffer, tool/thinking folding, model/session commands, and first-class resume/reconnect behavior.
+
+Unlike =pi-coding-agent.el=, jcode is server-first.  Emacs should be a client/view over jcode sessions, not the owner of the agent lifecycle.
+
+* Design principles
+
+- Backend owns lifecycle: jcode daemon owns sessions, history, tools, provider state, and live activity.
+- Emacs owns presentation: buffers, keybindings, markdown rendering, completion, session list UI, and TRAMP-aware process launching.
+- Prefer stable/client-facing protocol first: start with =jcode acp= over stdio, then add native socket support if needed.
+- Remote-first: all control paths should work from a TRAMP =default-directory= by launching the client adapter on the remote host.
+- No Emacs session database as source of truth.  Emacs may cache display metadata, but jcode session files/daemon remain authoritative.
+
+* Protocol assessment
+
+** What jcode exposes over ACP
+
+=jcode acp= is a JSON-RPC-over-stdio adapter backed by the jcode daemon.  This is the best first backend because Emacs can launch it with =make-process= locally or =start-file-process= under TRAMP.
+
+Observed ACP request surface:
+
+| Method | Purpose |
+|--------+---------|
+| =initialize= | capability handshake |
+| =session/new= | create/subscribe to a new daemon session for a cwd |
+| =session/load= | attach to an existing session and replay history |
+| =session/resume= | attach to an existing session without full replay |
+| =session/prompt= | send user input |
+| =session/cancel= | cancel active prompt |
+| =session/close= | close/detach ACP session |
+
+Observed standard event mapping:
+
+| jcode event | ACP-ish update |
+|-------------+----------------|
+| =TextDelta= / =TextReplace= | =agent_message_chunk= |
+| =ToolStart= | =tool_call= pending |
+| =ToolInput= | =tool_call_update= with parsed =rawInput= when possible |
+| =ToolExec= | =tool_call_update= in-progress |
+| =ToolDone= | =tool_call_update= completed/failed with output |
+| =GeneratedImage= | completed content text describing image |
+| =SessionRenamed= | =session_info_update= |
+
+Capabilities advertised by jcode ACP include:
+
+- =loadSession = true=
+- prompt image support
+- embedded context support
+- session close/resume support
+- no ACP HTTP/SSE MCP support yet; configure MCP in jcode config instead
+
+In extended/full profile, jcode ACP advertises a =raw_server_event= extension and emits =_jcode/server_event= notifications containing the original jcode =ServerEvent=.  This is important for jcode-native fidelity: side panels, token/cache events, reloads, swarm status, etc. can be consumed without waiting for ACP to standardize them.
+
+** ACP backend, phase 1
+
+Expected mapping:
+
+| Emacs action | ACP request |
+|--------------+-------------|
+| create chat in cwd | =session/new= |
+| attach existing session | =session/load= or =session/resume= |
+| send prompt | =session/prompt= |
+| abort | =session/cancel= |
+| close buffer/client | =session/close= |
+| initialize capabilities | =initialize= |
+
+Run ACP in jcode's extended/full profile so raw jcode server events can be surfaced through the =_jcode/server_event= extension when standard ACP events are insufficient.
+
+** Native socket backend, phase 2
+
+The native jcode protocol is newline-delimited JSON over the jcode daemon socket.  It exposes richer jcode-native events and requests:
+
+- =subscribe=
+- =message=
+- =cancel=
+- =soft_interrupt=
+- =get_history=
+- =resume_session=
+- =cycle_model=
+- =refresh_models=
+- =side_panel_state=
+- text/tool/reasoning/token/session events
+
+Use this backend for local high-fidelity integration or if ACP lacks required functionality.  For remote use, prefer ACP unless we add explicit socket forwarding.
+
+* Package structure
+
+Proposed modules:
+
+| File | Purpose |
+|------|---------|
+| =emacs-jcode.el= | entry point, autoloads, user commands |
+| =emacs-jcode-ui.el= | buffers, modes, faces, window layout, shared state |
+| =emacs-jcode-render.el= | chat rendering, markdown, tool/reasoning folds, diffs |
+| =emacs-jcode-input.el= | prompt buffer, history, send/abort/steer, file completion |
+| =emacs-jcode-session.el= | session manager, list/resume/attach, buffer/session mapping |
+| =emacs-jcode-transport.el= | backend-neutral request/event interface |
+| =emacs-jcode-acp.el= | =jcode acp= JSON-RPC stdio backend |
+| =emacs-jcode-socket.el= | optional direct jcode socket backend |
+| =emacs-jcode-tramp.el= | remote process launch, connection-local config, server identity |
+| =emacs-jcode-menu.el= | transient menu for model/session/provider actions |
+
+Reuse UX patterns from =pi-coding-agent.el=, but keep protocol code separate enough that ACP and socket backends can coexist.
+
+* Session manager
+
+The session manager should expose:
+
+- =emacs-jcode=: open/create session for current =default-directory=.
+- =emacs-jcode-resume=: select an existing jcode session and attach.
+- =emacs-jcode-list=: tabulated/consult UI with live/known sessions.
+- =emacs-jcode-rename-session=: rename current session.
+- =emacs-jcode-disconnect=: detach Emacs client without stopping jcode session.
+- =emacs-jcode-stop-session=: request stop/close when supported.
+
+Important state:
+
+- server identity: local/remote TRAMP prefix + socket path/profile
+- jcode session id
+- cwd/project root
+- chat buffer and input buffer
+- processing status
+- last history sync id
+- backend process/socket object
+
+Open question: jcode currently exposes rich =History= with =all_sessions= for an attached session, but a clean standalone =list_sessions= client RPC was not obvious.  Initial implementation can combine:
+
+1. jcode history/all_sessions after connecting to a daemon;
+2. scanning =~/.jcode/sessions= locally/remotely for saved sessions;
+3. optional =jcode --resume= or debug command integration if a stable JSON listing exists or is added upstream.
+
+A small upstream =list_sessions= request would make this much cleaner.
+
+* agent-shell alternative
+
+[[https://github.com/xenodium/agent-shell][agent-shell]] may be good enough for a practical first jcode-in-Emacs experience.
+
+Findings:
+
+- It is a mature native Emacs shell for ACP-driven agents.
+- It depends on =acp.el= and =shell-maker=.
+- It already supports session strategies =new=, =latest=, and =prompt=.
+- It already supports session restore via =session/resume= and =session/load= with configurable verbosity.
+- It has permission UI, ACP traffic logs, markdown rendering, usage display, viewport UI, and a small ecosystem of extensions.
+- It already ships Pi and OpenCode integrations.  The Pi integration requires a =pi-acp= adapter; OpenCode uses =opencode acp=.
+
+Minimal jcode integration for agent-shell should be very small:
+
+#+begin_src emacs-lisp
+(require 'agent-shell)
+
+(defcustom agent-shell-jcode-acp-command '("jcode" "acp")
+  "Command and parameters for the jcode ACP adapter."
+  :type '(repeat string))
+
+(defun agent-shell-jcode-make-agent-config ()
+  (agent-shell-make-agent-config
+   :identifier 'jcode
+   :mode-line-name "Jcode"
+   :buffer-name "Jcode"
+   :shell-prompt "Jcode> "
+   :shell-prompt-regexp "Jcode> "
+   :client-maker (lambda (buffer)
+                   (agent-shell--make-acp-client
+                    :command (car agent-shell-jcode-acp-command)
+                    :command-params (cdr agent-shell-jcode-acp-command)
+                    :context-buffer buffer))))
+#+end_src
+
+Recommended near-term path:
+
+1. Prototype jcode via agent-shell first.
+2. Verify =jcode acp= compatibility with agent-shell session creation, prompt, cancel, resume/load, tool rendering, and permission flows.
+3. If the UX is acceptable, keep =emacs-jcode= as a thin jcode-specific package that registers an agent-shell backend, adds TRAMP defaults, and optionally consumes jcode raw events.
+4. Only build a custom Pi-like two-buffer UI if agent-shell's comint/viewport UX cannot be shaped close enough.
+
+Tradeoff: agent-shell gives a lot immediately but its default UX is a shell/viewport, not exactly =pi-coding-agent.el='s two-buffer chat+input layout.  A custom package gives exact UI control but duplicates a large amount of already-working ACP plumbing.
+
+** Can a custom two-buffer Pi-like UI be built on top of agent-shell?
+
+Likely yes, with two viable layers:
+
+*** Thin wrapper over agent-shell buffers
+
+Use agent-shell as the hidden/session engine and reuse its already-working ACP, session, permission, queueing, transcript, markdown, and tool rendering code.
+
+Shape:
+
+- create a jcode =agent-shell= buffer using a jcode config;
+- display that shell buffer as the read-only/chat pane;
+- create a separate =emacs-jcode-input-mode= prompt buffer;
+- on =C-c C-c=, send input with =agent-shell--insert-to-shell-buffer :submit t=;
+- if busy, use =agent-shell-queue-request= or its queue internals;
+- on abort, call =agent-shell-interrupt=;
+- keep focus in the input buffer, similar to =pi-coding-agent.el=.
+
+Pros:
+
+- very fast implementation;
+- keeps agent-shell's ACP and tool UI behavior;
+- jcode support can be a small =agent-shell-jcode.el= config;
+- TRAMP can use agent-shell/acp process launching if the command runs under remote =default-directory=.
+
+Cons:
+
+- relies on private =agent-shell--*= functions for the cleanest integration;
+- chat pane is still fundamentally a shell-maker/comint buffer, even if we hide direct editing;
+- exact =pi-coding-agent.el= behavior may fight shell-maker prompt assumptions.
+
+*** Direct ACP UI using acp.el, borrowing ideas/code
+
+Use =acp.el= directly and implement our own chat/input buffers.  Borrow concepts from agent-shell but avoid depending on private internals.
+
+Pros:
+
+- exact two-window UX;
+- cleaner long-term architecture;
+- no shell-maker/comint constraints.
+
+Cons:
+
+- reimplements session handling, pending requests, permission handling, markdown/tool rendering, traffic/debug UX, and file context support that agent-shell already has.
+
+Recommendation: implement the thin wrapper first.  If it proves awkward, keep the jcode agent-shell config and move the two-buffer UI down one layer to =acp.el=.
+
+** agent-shell limitation relevant to jcode
+
+agent-shell has support for =session/list= and can prompt/latest-select when the agent advertises list capability.  jcode ACP currently advertises load/resume/close, but not list.  Therefore:
+
+- new sessions should work;
+- explicit resume by id should work;
+- session/load vs session/resume restore should work;
+- agent-shell's built-in prompt/latest session picker may fall back to new session for jcode;
+- =emacs-jcode= still needs its own session manager or an upstream jcode ACP =session/list= method for a polished session picker.
+
+** Stability/history assessment
+
+I did not find a README/doc statement that jcode's ACP adapter is a stable public API.  The evidence is mixed:
+
+- ACP is real code, not just a prototype: it has a first-class =jcode acp= subcommand, JSON-RPC 2.0 parsing, capability handshake, unit tests, and config knobs.
+- ACP is very new: it entered history on 2026-05-23 in commit =f0266100= ("Add daemon-backed ACP adapter") and has only a couple of direct file changes since.
+- ACP currently only dispatches =initialize=, =session/new=, =session/load=, =session/resume=, =session/prompt=, =session/cancel=, and =session/close=.  No =session/list= support is advertised or handled.
+- Native jcode socket protocol is more established.  It is documented as the single-server/multi-client architecture, and the iOS design says the server protocol is the single source of truth with Swift codecs validated by real wire JSON fixtures.  It also explicitly ignores unknown events for forward compatibility.
+- Native protocol =History= responses include =all_sessions=, and native requests include =resume_session= and =get_history=, but there is no obvious standalone stable =list_sessions= request in the main protocol either.
+- The multi-session design doc says the "exact public API shape is less important than preserving a clean internal model," which suggests the socket protocol is still product-internal rather than a promised external API.
+
+Conclusion: for long-running tasks and session picking, do not assume current ACP is enough.  Either:
+
+1. ask upstream/add =session/list= to jcode ACP, ideally backed by the same session-picker data jcode already uses;
+2. implement a fallback session manager by scanning =~/.jcode/sessions= locally/remotely; or
+3. use the native socket protocol and read =History.all_sessions= after subscribing, while accepting that this is more internal and may change.
+
+Relevant upstream issues checked:
+
+- [[https://github.com/1jehuang/jcode/issues/144][#144 Feature request: programmatic orchestration API for external harnesses]] is open and directly overlaps.  It explicitly asks for session inventory, spawn/attach/detach, resume by ID, streaming I/O, and stable non-interactive API.
+- [[https://github.com/1jehuang/jcode/issues/127][#127 Feature request: ACP support]] is closed as implemented.  The maintainer comment says to open targeted issues for specific ACP capability gaps.  =session/list= is exactly such a targeted gap.
+- [[https://github.com/1jehuang/jcode/issues/247][#247 jcode --mode rpc]] is closed/not planned and moved to a fork at the repo owner's request.  It asked for a Pi-like stable JSONL RPC mode, but is not the current upstream path.
+- [[https://github.com/1jehuang/jcode/issues/53][#53 Harden server/shared-state boundaries and reduce stringly protocol plumbing]] is open and related to protocol maintainability, but not specifically about external clients or session listing.
+
+I did not find an open issue specifically titled around =session/list= or agent-shell/Emacs.  Best upstream move: comment on #144 or open a new focused issue: "ACP: implement session/list for external clients/agent-shell" referencing #127 and #144.
+
+* TRAMP-native behavior
+
+Mirror the approach from =emacs-term-sessions=:
+
+- =default-directory= decides where the jcode client adapter runs.
+- Local directory: launch local =jcode acp=.
+- TRAMP directory: launch remote =jcode acp= using =start-file-process= with remote =default-directory=.
+- The remote =jcode acp= connects to or starts the remote jcode daemon.
+- Session specs should preserve method/user/host/port/hop/localname so a session can be reopened from Org or a session list.
+
+This avoids direct remote Unix socket handling and naturally supports =/ssh:=, =/sshx:=, and =/rpc:= style TRAMP transports.
+
+* UI/UX milestones
+
+** Milestone 0: skeleton
+
+- Package skeleton and flake.
+- Customizable =emacs-jcode-program=.
+- Backend interface and fake transport tests.
+
+** Milestone 1: ACP chat MVP
+
+- Spawn =jcode acp= locally/TRAMP.
+- Initialize ACP.
+- Create session in current cwd.
+- Send prompt and render assistant text deltas.
+- Abort current prompt.
+- Basic history replay on attach.
+
+** Milestone 2: Pi-like UI polish
+
+- Two-buffer layout: chat + input.
+- Markdown rendering with =md-ts-mode= or equivalent.
+- Tool call blocks with fold/unfold.
+- Reasoning/thinking display.
+- Prompt history and file/path completion.
+- Busy/idle status in header line/modeline.
+
+** Milestone 3: session manager
+
+- Session list UI.
+- Resume saved sessions.
+- Attach/detach without stopping daemon session.
+- Multiple sessions per Emacs frame/project.
+- Reconnect after Emacs restart.
+
+** Milestone 4: jcode-native features
+
+- Soft interrupts / steering.
+- Model/provider/account display and switching.
+- Side panel state rendering.
+- Token/cache status widgets.
+- Server reload/reconnect handling.
+
+** Milestone 5: native socket backend
+
+- Direct local socket client.
+- Rich event parity with jcode TUI.
+- Optional fallback to ACP for TRAMP.
+
+* Testing strategy
+
+- Unit tests for JSON-RPC framing and event mapping.
+- Fake ACP server for deterministic UI tests.
+- Golden rendering tests for text/tool/reasoning/history events.
+- TRAMP launch tests with mocked =start-file-process= arguments.
+- Optional integration tests gated by =JCODE_INTEGRATION= and a real =jcode= binary.
+
+* Risks and open questions
+
+- ACP stability vs native socket richness: start with ACP, but keep transport abstraction ready for socket.
+- Session listing: may need upstream support for a stable JSON list API.
+- Tool event fidelity: standard ACP may be lossy; extended/full =_jcode/server_event= should mitigate this.
+- Remote auth/config: remote jcode daemon uses remote =~/.jcode=, which is correct but must be explicit in docs.
+- Long-running build cost: jcode is Rust and large; the flake should provide a pinned build, but development can also use an externally installed =jcode=.
