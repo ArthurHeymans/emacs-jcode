@@ -9,6 +9,8 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 - prompt history with =M-p= / =M-n=
 - cancel and disconnect commands
 - attach/resume by session id, using ACP-compatible =cwd= and prompt content blocks
+- completion picker and tabulated list for previous jcode sessions from =~/.jcode/sessions=
+- =emacs-jcode-current= to reconnect to the latest session for the current project
 - =session/update= rendering for assistant/user chunks and tool updates
 - TRAMP-aware ACP process launching via =start-file-process=
 - focused ERT coverage for ACP parameter shapes and rendering
@@ -29,8 +31,11 @@ Load the package, then run:
 Commands:
 
 - =M-x emacs-jcode= creates or focuses a jcode session for the current project.
-- =C-u M-x emacs-jcode= prompts for a session id and loads it.
-- =M-x emacs-jcode-resume= prompts for a session id and resumes without full replay.
+- =C-u M-x emacs-jcode= picks an existing session id and loads it.
+- =M-x emacs-jcode-current= resumes the latest known session for the current project.
+- =C-u M-x emacs-jcode-current= resumes the globally latest known session.
+- =M-x emacs-jcode-list= opens a tabulated previous-session list.  Press =RET= to resume or =l= to load with history replay.
+- =M-x emacs-jcode-resume= picks a session id and resumes without full replay.
 - =C-u M-x emacs-jcode-resume= loads with history replay.
 - =M-x emacs-jcode-plan= opens the implementation plan.
 

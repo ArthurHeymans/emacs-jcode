@@ -85,5 +85,37 @@
       (kill-buffer chat)
       (kill-buffer input))))
 
+(ert-deftest emacs-jcode-read-session-info-parses-metadata ()
+  (let ((file (make-temp-file "emacs-jcode-session" nil ".json"
+                              "{\"id\":\"s1\",\"title\":\"Title\",\"short_name\":\"short\",\"working_dir\":\"/tmp/project\",\"status\":\"Active\",\"model\":\"gpt\",\"provider_key\":\"openai\",\"updated_at\":\"2026-01-02T00:00:00Z\"}")))
+    (unwind-protect
+        (let ((info (emacs-jcode--read-session-info file)))
+          (should (equal (emacs-jcode-session-info-id info) "s1"))
+          (should (equal (emacs-jcode-session-info-title info) "Title"))
+          (should (equal (emacs-jcode-session-info-working-dir info) "/tmp/project"))
+          (should (equal (emacs-jcode-session-info-model info) "gpt")))
+      (delete-file file))))
+
+(ert-deftest emacs-jcode-latest-session-filters-current-directory ()
+  (let* ((root (make-temp-file "emacs-jcode-sessions" t))
+         (project-a (file-name-as-directory (expand-file-name "a" root)))
+         (project-b (file-name-as-directory (expand-file-name "b" root)))
+         (sessions (file-name-as-directory (expand-file-name "sessions" root)))
+         (emacs-jcode-sessions-directory sessions))
+    (unwind-protect
+        (progn
+          (make-directory project-a)
+          (make-directory project-b)
+          (make-directory sessions)
+          (write-region (format "{\"id\":\"old\",\"short_name\":\"old\",\"working_dir\":%S,\"updated_at\":\"2026-01-01T00:00:00Z\"}" project-a)
+                        nil (expand-file-name "old.json" sessions))
+          (write-region (format "{\"id\":\"other\",\"short_name\":\"other\",\"working_dir\":%S,\"updated_at\":\"2026-01-03T00:00:00Z\"}" project-b)
+                        nil (expand-file-name "other.json" sessions))
+          (write-region (format "{\"id\":\"new\",\"short_name\":\"new\",\"working_dir\":%S,\"updated_at\":\"2026-01-02T00:00:00Z\"}" project-a)
+                        nil (expand-file-name "new.json" sessions))
+          (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a t)) "new"))
+          (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a nil)) "other")))
+      (delete-directory root t))))
+
 (provide 'emacs-jcode-test)
 ;;; emacs-jcode-test.el ends here
