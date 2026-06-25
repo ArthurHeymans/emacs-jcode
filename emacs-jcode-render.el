@@ -44,6 +44,21 @@
   (when (and text (not (string-empty-p text)))
     (emacs-jcode--append chat text)))
 
+(defun emacs-jcode--last-heading (buffer)
+  "Return the last simple setext heading title in BUFFER, or nil."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-max))
+        (when (re-search-backward "^\\(You\\|Assistant\\)\n=+\n" nil t)
+          (match-string-no-properties 1))))))
+
+(defun emacs-jcode-render-assistant-message (chat text)
+  "Render assistant message TEXT in CHAT with a heading when needed."
+  (unless (equal (emacs-jcode--last-heading chat) "Assistant")
+    (emacs-jcode--section chat "Assistant" 'emacs-jcode-assistant-face))
+  (emacs-jcode-render-assistant-delta chat text))
+
 (defun emacs-jcode-render-tool (chat params &optional update)
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
   (let* ((name (or (emacs-jcode--alist-get-any '(name title toolCallId toolCallId) params) "tool"))
@@ -69,7 +84,7 @@
          (kind (alist-get 'sessionUpdate update)))
     (pcase kind
       ("agent_message_chunk"
-       (emacs-jcode-render-assistant-delta
+       (emacs-jcode-render-assistant-message
         (emacs-jcode-session-chat-buffer session)
         (emacs-jcode--event-text update)))
       ("user_message_chunk"
@@ -92,7 +107,7 @@
       ("session/update"
        (emacs-jcode--handle-session-update session params))
       ("agent_message_chunk"
-       (emacs-jcode-render-assistant-delta chat (emacs-jcode--event-text params)))
+       (emacs-jcode-render-assistant-message chat (emacs-jcode--event-text params)))
       ("user_message_chunk"
        (emacs-jcode-render-user chat (or (emacs-jcode--event-text params) "")))
       ("tool_call"

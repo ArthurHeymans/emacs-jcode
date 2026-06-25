@@ -35,6 +35,35 @@
 (defvar-local emacs-jcode--session nil)
 (defvar-local emacs-jcode--chat-buffer nil)
 (defvar-local emacs-jcode--input-buffer nil)
+(defvar-local emacs-jcode--display-session-id nil)
+(defvar-local emacs-jcode--display-title nil)
+(defvar-local emacs-jcode--display-status nil)
+(defvar-local emacs-jcode--display-model nil)
+
+(defun emacs-jcode--header-line ()
+  "Return Pi-like header line text for current jcode buffer."
+  (let* ((session (or emacs-jcode--display-title
+                      emacs-jcode--display-session-id
+                      "new"))
+         (status (or emacs-jcode--display-status "starting"))
+         (model (or emacs-jcode--display-model "model unknown"))
+         (dir (abbreviate-file-name default-directory)))
+    (concat
+     (propertize " Jcode " 'face 'mode-line-emphasis)
+     (propertize (format " %s " session) 'face 'emacs-jcode-assistant-face)
+     (propertize (format " %s " status) 'face 'emacs-jcode-dim-face)
+     (propertize (format " %s " model) 'face 'emacs-jcode-dim-face)
+     (propertize (format " %s" dir) 'face 'emacs-jcode-dim-face))))
+
+(cl-defun emacs-jcode--set-display-metadata (buffer &key session-id title status model)
+  "Set display metadata in BUFFER."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when session-id (setq emacs-jcode--display-session-id session-id))
+      (when title (setq emacs-jcode--display-title title))
+      (when status (setq emacs-jcode--display-status status))
+      (when model (setq emacs-jcode--display-model model))
+      (setq header-line-format '(:eval (emacs-jcode--header-line))))))
 
 (defvar emacs-jcode-chat-mode-map
   (let ((map (make-sparse-keymap)))
@@ -47,7 +76,8 @@
 (define-derived-mode emacs-jcode-chat-mode special-mode "Jcode-Chat"
   "Major mode for jcode chat buffers."
   (setq-local buffer-read-only t)
-  (setq-local truncate-lines nil))
+  (setq-local truncate-lines nil)
+  (setq-local header-line-format '(:eval (emacs-jcode--header-line))))
 
 (defvar emacs-jcode-input-mode-map
   (let ((map (make-sparse-keymap)))
@@ -61,8 +91,7 @@
 
 (define-derived-mode emacs-jcode-input-mode text-mode "Jcode-Input"
   "Major mode for composing jcode prompts."
-  (setq-local header-line-format
-              "C-c C-c send  C-c C-k cancel  C-c C-d disconnect  M-p/M-n history"))
+  (setq-local header-line-format '(:eval (emacs-jcode--header-line))))
 
 (defun emacs-jcode--project-directory ()
   "Return the current project directory, falling back to `default-directory'."

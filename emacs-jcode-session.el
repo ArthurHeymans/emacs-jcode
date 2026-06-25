@@ -123,6 +123,17 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                   (or (emacs-jcode-session-info-working-dir info) "")
                   id))))
 
+(defun emacs-jcode--apply-session-info (info chat input)
+  "Apply session INFO metadata to CHAT and INPUT buffers."
+  (let ((title (emacs-jcode--session-display-title info)))
+    (dolist (buffer (list chat input))
+      (emacs-jcode--set-display-metadata
+       buffer
+       :session-id (emacs-jcode-session-info-id info)
+       :title title
+       :status (emacs-jcode-session-info-status info)
+       :model (emacs-jcode-session-info-model info)))))
+
 (defun emacs-jcode-list-refresh ()
   "Refresh the jcode session list buffer."
   (setq tabulated-list-entries
@@ -130,18 +141,26 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                 (emacs-jcode-list-sessions-data emacs-jcode--session-list-directory)))
   (tabulated-list-print t))
 
-(defun emacs-jcode-list-open (&optional full-load)
-  "Open session at point.  Prefix FULL-LOAD loads history replay."
+(defun emacs-jcode-apply-session-info-to-buffers (session-id chat input)
+  "Apply discovered SESSION-ID metadata to CHAT and INPUT buffers."
+  (when-let ((info (cl-find session-id (emacs-jcode-list-sessions-data default-directory)
+                            :key #'emacs-jcode-session-info-id
+                            :test #'string=)))
+    (emacs-jcode--apply-session-info info chat input)))
+
+(defun emacs-jcode-list-open (&optional resume-only)
+  "Open session at point with history replay.
+With prefix argument RESUME-ONLY, attach without replay."
   (interactive "P")
   (let ((id (tabulated-list-get-id)))
     (unless id (user-error "No session at point"))
-    (emacs-jcode-resume id full-load)))
+    (emacs-jcode-resume id (not resume-only))))
 
 (defvar emacs-jcode-list-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "g") #'emacs-jcode-list-refresh)
     (define-key map (kbd "RET") #'emacs-jcode-list-open)
-    (define-key map (kbd "l") (lambda () (interactive) (emacs-jcode-list-open t)))
+    (define-key map (kbd "r") (lambda () (interactive) (emacs-jcode-list-open t)))
     (define-key map (kbd "q") #'quit-window)
     map)
   "Keymap for `emacs-jcode-list-mode'.")

@@ -93,6 +93,11 @@
                                             (format "%s failed: %S" method err))))
       (jsonrpc-request conn method params))))
 
+(defun emacs-jcode--session-set-display (session &rest args)
+  "Apply display ARGS to both buffers for SESSION."
+  (apply #'emacs-jcode--set-display-metadata (emacs-jcode-session-chat-buffer session) args)
+  (apply #'emacs-jcode--set-display-metadata (emacs-jcode-session-input-buffer session) args))
+
 (defun emacs-jcode-session-initialize (session callback)
   "Initialize ACP SESSION then call CALLBACK."
   (emacs-jcode--request
@@ -109,7 +114,8 @@
    session "session/new" `(:cwd ,(emacs-jcode-session-cwd session))
    (lambda (result)
      (when-let ((id (or (alist-get 'sessionId result) (alist-get 'id result))))
-       (setf (emacs-jcode-session-id session) id))
+       (setf (emacs-jcode-session-id session) id)
+       (emacs-jcode--session-set-display session :session-id id :status "Active"))
      (emacs-jcode-render-info (emacs-jcode-session-chat-buffer session)
                               (format "Connected to jcode%s"
                                       (if (emacs-jcode-session-id session)
@@ -120,10 +126,12 @@
   "Load or resume jcode session ID into SESSION.  RESUME-ONLY uses session/resume."
   (setf (emacs-jcode-session-id session) id)
   (setf (emacs-jcode-session-busy session) t)
+  (emacs-jcode--session-set-display session :session-id id :status "Loading")
   (emacs-jcode--request session (if resume-only "session/resume" "session/load")
                         (emacs-jcode--acp-load-params session id)
                         (lambda (_result)
                           (setf (emacs-jcode-session-busy session) nil)
+                          (emacs-jcode--session-set-display session :session-id id :status "Active")
                           (emacs-jcode-render-info
                            (emacs-jcode-session-chat-buffer session)
                            (format "%s session %s" (if resume-only "Resumed" "Loaded") id)))))
@@ -131,10 +139,12 @@
 (defun emacs-jcode-session-prompt (session text)
   "Send TEXT as prompt for SESSION."
   (setf (emacs-jcode-session-busy session) t)
+  (emacs-jcode--session-set-display session :status "Working")
   (emacs-jcode--request session "session/prompt"
                         (emacs-jcode--acp-prompt-params session text)
                         (lambda (_result)
-                          (setf (emacs-jcode-session-busy session) nil))))
+                          (setf (emacs-jcode-session-busy session) nil)
+                          (emacs-jcode--session-set-display session :status "Idle"))))
 
 (defun emacs-jcode-session-cancel (session)
   "Cancel active prompt in SESSION."
