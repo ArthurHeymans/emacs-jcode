@@ -16,6 +16,9 @@
 
 (defvar-local jcode--native-connection nil)
 
+(defconst jcode-native-reasoning-efforts '("none" "low" "medium" "high" "xhigh" "max")
+  "Reasoning effort values cycled from the header.")
+
 (defcustom jcode-native-poll-interval 1.0
   "Seconds between native history refreshes for passive session views.
 
@@ -87,6 +90,58 @@ history."
   "Cancel current native generation for CONNECTION."
   (jcode-native--request connection "cancel"))
 
+(defun jcode-native-set-model (connection model)
+  "Set CONNECTION's active MODEL."
+  (jcode-native--request connection "set_model" :model model))
+
+(defun jcode-native-set-reasoning-effort (connection effort)
+  "Set CONNECTION's reasoning EFFORT."
+  (jcode-native--request connection "set_reasoning_effort" :effort effort
+                         :target_session_id (jcode-native-connection-session-id connection)))
+
+(defun jcode-native--current-chat ()
+  "Return the chat buffer associated with the current jcode buffer."
+  (cond
+   ((derived-mode-p 'jcode-chat-mode) (current-buffer))
+   ((and (boundp 'jcode--chat-buffer) (buffer-live-p jcode--chat-buffer)) jcode--chat-buffer)))
+
+(defun jcode-native--connection-for-command ()
+  "Return native connection for a header/menu command."
+  (when-let ((chat (jcode-native--current-chat)))
+    (buffer-local-value 'jcode--native-connection chat)))
+
+(defun jcode-select-model ()
+  "Select the current native jcode model from cached model metadata."
+  (interactive)
+  (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
+         (connection (or (buffer-local-value 'jcode--native-connection chat)
+                         (user-error "No native jcode connection")))
+         (models (or (buffer-local-value 'jcode--available-models chat) nil))
+         (current (buffer-local-value 'jcode--display-model chat))
+         (choice (if models
+                     (completing-read (format "Model (current: %s): " (or current "unknown"))
+                                      models nil t nil nil current)
+                   (read-string (format "Model (current: %s): " (or current "unknown")) nil nil current))))
+    (unless (string-empty-p choice)
+      (jcode-native-set-model connection choice)
+      (dolist (buffer (list chat (jcode-native-connection-input connection)))
+        (jcode--set-display-metadata buffer :model choice))
+      (message "Jcode: Model set to %s" choice))))
+
+(defun jcode-cycle-reasoning-effort ()
+  "Cycle native jcode reasoning effort from the header."
+  (interactive)
+  (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
+         (connection (or (buffer-local-value 'jcode--native-connection chat)
+                         (user-error "No native jcode connection")))
+         (current (or (buffer-local-value 'jcode--display-reasoning-effort chat) "none"))
+         (tail (member current jcode-native-reasoning-efforts))
+         (next (or (cadr tail) (car jcode-native-reasoning-efforts))))
+    (jcode-native-set-reasoning-effort connection next)
+    (dolist (buffer (list chat (jcode-native-connection-input connection)))
+      (jcode--set-display-metadata buffer :reasoning-effort next))
+    (message "Jcode: Reasoning effort %s" next)))
+
 (defun jcode-native--drain-followup (connection)
   "Send next queued follow-up for CONNECTION, if any."
   (when-let ((text (pop (jcode-native-connection-followup-queue connection))))
@@ -153,15 +208,29 @@ history."
 (defun jcode--session-set-display-native (connection event)
   "Apply native EVENT metadata to CONNECTION buffers."
   (let ((model (alist-get 'provider_model event))
-        (server (alist-get 'server_name event)))
+        (provider (alist-get 'provider_name event))
+        (server (alist-get 'server_name event))
+        (reasoning (alist-get 'reasoning_effort event))
+        (credential (alist-get 'resolved_credential event))
+        (total-tokens (alist-get 'total_tokens event))
+        (token-usage-totals (alist-get 'token_usage_totals event))
+        (activity (alist-get 'activity event))
+        (available-models (append (alist-get 'available_models event) nil)))
     (dolist (buffer (list (jcode-native-connection-chat connection)
                           (jcode-native-connection-input connection)))
       (jcode--set-display-metadata
        buffer
        :session-id (jcode-native-connection-session-id connection)
        :title (or server (jcode-native-connection-session-id connection))
-       :status "Live"
-       :model model))))
+       :status nil
+       :model model
+       :provider provider
+       :reasoning-effort reasoning
+       :credential credential
+       :total-tokens total-tokens
+       :token-usage-totals token-usage-totals
+       :activity activity
+       :available-models available-models))))
 
 (defun jcode-native--handle-event (connection event)
   "Handle native protocol EVENT for CONNECTION."
@@ -172,10 +241,33 @@ history."
       ("ack" nil)
       ("done"
        (setf (jcode-native-connection-busy connection) nil)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata buffer :activity '((is_processing . :false))))
        (jcode-native--drain-followup connection))
+      ("tokens"
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata
+          buffer :token-usage-totals
+          `((input_tokens . ,(alist-get 'input event))
+            (output_tokens . ,(alist-get 'output event))
+            (cache_read_input_tokens . ,(or (alist-get 'cache_read_input event) 0))
+            (cache_creation_input_tokens . ,(or (alist-get 'cache_creation_input event) 0))))))
+      ("model_changed"
+       (if-let ((error (alist-get 'error event)))
+           (jcode-render-error chat error)
+         (dolist (buffer (list chat (jcode-native-connection-input connection)))
+           (jcode--set-display-metadata buffer :model (alist-get 'model event)
+                                        :provider (alist-get 'provider_name event)))))
+      ("reasoning_effort_changed"
+       (if-let ((error (alist-get 'error event)))
+           (jcode-render-error chat error)
+         (dolist (buffer (list chat (jcode-native-connection-input connection)))
+           (jcode--set-display-metadata buffer :reasoning-effort (alist-get 'effort event)))))
       ("reasoning_delta" (jcode-native--mark-busy connection))
       ("text_delta"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata buffer :activity '((is_processing . t))))
        (jcode-render-assistant-message chat (alist-get 'text event)))
       ("text_replace"
        (jcode-native--mark-busy connection)

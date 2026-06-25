@@ -17,6 +17,8 @@
 (declare-function jcode-next-input "jcode-input")
 (declare-function jcode-complete "jcode-input")
 (declare-function jcode-steer "jcode-input")
+(declare-function jcode-select-model "jcode-native")
+(declare-function jcode-cycle-reasoning-effort "jcode-native")
 (declare-function jcode--file-reference-capf "jcode-input")
 (declare-function jcode--path-capf "jcode-input")
 (declare-function jcode--maybe-complete-at "jcode-input")
@@ -44,7 +46,28 @@
 (defvar-local jcode--display-title nil)
 (defvar-local jcode--display-status nil)
 (defvar-local jcode--display-model nil)
+(defvar-local jcode--display-reasoning-effort nil)
+(defvar-local jcode--display-provider nil)
+(defvar-local jcode--display-credential nil)
+(defvar-local jcode--display-total-tokens nil)
+(defvar-local jcode--display-token-usage-totals nil)
+(defvar-local jcode--display-activity nil)
+(defvar-local jcode--available-models nil)
 (defvar-local jcode--killing-linked-buffer nil)
+
+(defvar jcode--header-model-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'jcode-select-model)
+    (define-key map [mode-line mouse-1] #'jcode-select-model)
+    map)
+  "Keymap for clicking the model in the jcode header.")
+
+(defvar jcode--header-reasoning-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'jcode-cycle-reasoning-effort)
+    (define-key map [mode-line mouse-1] #'jcode-cycle-reasoning-effort)
+    map)
+  "Keymap for clicking the reasoning effort in the jcode header.")
 
 (defun jcode--normalize-directory (dir)
   "Normalize DIR for project/session comparisons."
@@ -63,22 +86,90 @@
           (setq jcode--killing-linked-buffer t))
         (kill-buffer linked)))))
 
+(defun jcode--shorten-model-name (model)
+  "Return a compact display name for MODEL."
+  (let ((name (or model "...")))
+    (setq name (replace-regexp-in-string "^claude-" "" name))
+    (setq name (replace-regexp-in-string "-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$" "" name))
+    (if (> (length name) 28)
+        (concat (substring name 0 25) "...")
+      name)))
+
+(defun jcode--format-token-count (tokens)
+  "Format TOKENS compactly."
+  (cond
+   ((not (numberp tokens)) "?")
+   ((>= tokens 1000000) (format "%.1fM" (/ tokens 1000000.0)))
+   ((>= tokens 1000) (format "%.1fk" (/ tokens 1000.0)))
+   (t (number-to-string tokens))))
+
+(defun jcode--header-activity ()
+  "Return useful activity text for the header."
+  (let ((activity jcode--display-activity))
+    (cond
+     ((and (listp activity) (alist-get 'current_tool_name activity))
+      (format "tool:%s" (alist-get 'current_tool_name activity)))
+     ((and (listp activity) (eq (alist-get 'is_processing activity) t)) "streaming")
+     (jcode--display-status jcode--display-status)
+     (t "idle"))))
+
+(defun jcode--header-usage ()
+  "Return token and credential usage text for the header."
+  (let* ((totals jcode--display-token-usage-totals)
+         (input (or (and (listp totals) (alist-get 'input_tokens totals))
+                    (and (vectorp jcode--display-total-tokens)
+                         (> (length jcode--display-total-tokens) 0)
+                         (aref jcode--display-total-tokens 0))))
+         (output (or (and (listp totals) (alist-get 'output_tokens totals))
+                     (and (vectorp jcode--display-total-tokens)
+                          (> (length jcode--display-total-tokens) 1)
+                          (aref jcode--display-total-tokens 1))))
+         (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals)))
+         (credential (pcase jcode--display-credential
+                       ('nil nil)
+                       (:false nil)
+                       ((and (pred symbolp) sym) (symbol-name sym))
+                       ((and (pred stringp) str) str)
+                       (_ (format "%s" jcode--display-credential)))))
+    (concat
+     (if (or input output)
+         (format " │ ctx %s/%s" (jcode--format-token-count input)
+                 (jcode--format-token-count output))
+       "")
+     (if (and cache-read (> cache-read 0))
+         (format " cache %s" (jcode--format-token-count cache-read))
+       "")
+     (if credential
+         (format " │ %s" credential)
+       ""))))
+
 (defun jcode--header-line ()
   "Return Pi-like header line text for current jcode buffer."
-  (let* ((session (or jcode--display-title
-                      jcode--display-session-id
-                      "new"))
-         (status (or jcode--display-status "starting"))
-         (model (or jcode--display-model "model unknown"))
+  (let* ((session (or jcode--display-title jcode--display-session-id "new"))
+         (model (jcode--shorten-model-name jcode--display-model))
+         (reasoning (or jcode--display-reasoning-effort "reasoning ?"))
+         (activity (jcode--header-activity))
          (dir (abbreviate-file-name default-directory)))
     (concat
-     (propertize " Jcode " 'face 'mode-line-emphasis)
-     (propertize (format " %s " session) 'face 'jcode-assistant-face)
-     (propertize (format " %s " status) 'face 'jcode-dim-face)
-     (propertize (format " %s " model) 'face 'jcode-dim-face)
-     (propertize (format " %s" dir) 'face 'jcode-dim-face))))
+     (propertize model
+                 'face 'jcode-assistant-face
+                 'mouse-face 'highlight
+                 'help-echo "mouse-1: Select model"
+                 'local-map jcode--header-model-map)
+     " • "
+     (propertize reasoning
+                 'mouse-face 'highlight
+                 'help-echo "mouse-1: Cycle reasoning effort"
+                 'local-map jcode--header-reasoning-map)
+     " "
+     (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
+     (jcode--header-usage)
+     (propertize (format " │ %s │ %s" session dir) 'face 'jcode-dim-face))))
 
-(cl-defun jcode--set-display-metadata (buffer &key session-id title status model)
+(cl-defun jcode--set-display-metadata (buffer &key session-id title status model
+                                               reasoning-effort provider credential
+                                               total-tokens token-usage-totals
+                                               activity available-models)
   "Set display metadata in BUFFER."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -86,6 +177,13 @@
       (when title (setq jcode--display-title title))
       (when status (setq jcode--display-status status))
       (when model (setq jcode--display-model model))
+      (when reasoning-effort (setq jcode--display-reasoning-effort reasoning-effort))
+      (when provider (setq jcode--display-provider provider))
+      (when credential (setq jcode--display-credential credential))
+      (when total-tokens (setq jcode--display-total-tokens total-tokens))
+      (when token-usage-totals (setq jcode--display-token-usage-totals token-usage-totals))
+      (when activity (setq jcode--display-activity activity))
+      (when available-models (setq jcode--available-models available-models))
       (setq header-line-format '(:eval (jcode--header-line))))))
 
 (defvar jcode-chat-mode-map
