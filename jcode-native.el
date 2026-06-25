@@ -94,6 +94,10 @@ history."
     (jcode--section (jcode-native-connection-chat connection) "Assistant" 'jcode-assistant-face)
     (jcode-native-message connection text)))
 
+(defun jcode-native--mark-busy (connection)
+  "Mark CONNECTION as actively processing a turn."
+  (setf (jcode-native-connection-busy connection) t))
+
 (defun jcode-native-close (connection)
   "Close native CONNECTION and cancel its refresh timer."
   (when connection
@@ -113,9 +117,10 @@ history."
   "Refresh passive native CONNECTION from daemon history."
   (if (and (jcode-native-connection-process connection)
            (process-live-p (jcode-native-connection-process connection)))
-      (condition-case nil
-          (jcode-native--request connection "get_history")
-        (error nil))
+      (unless (jcode-native-connection-busy connection)
+        (condition-case nil
+            (jcode-native--request connection "get_history")
+          (error nil)))
     (jcode-native-close connection)))
 
 (defun jcode-native--render-history-message (chat message)
@@ -168,11 +173,25 @@ history."
       ("done"
        (setf (jcode-native-connection-busy connection) nil)
        (jcode-native--drain-followup connection))
-      ("text_delta" (jcode-render-assistant-message chat (alist-get 'text event)))
-      ("text_replace" (jcode-render-assistant-message chat (alist-get 'text event)))
-      ("tool_start" (jcode-render-tool chat event nil))
-      ("tool_input" (jcode-render-tool chat event t))
-      ("tool_done" (jcode-render-tool chat event t))
+      ("reasoning_delta" (jcode-native--mark-busy connection))
+      ("text_delta"
+       (jcode-native--mark-busy connection)
+       (jcode-render-assistant-message chat (alist-get 'text event)))
+      ("text_replace"
+       (jcode-native--mark-busy connection)
+       (jcode-render-assistant-message chat (alist-get 'text event)))
+      ("tool_start"
+       (jcode-native--mark-busy connection)
+       (jcode-render-tool chat event nil))
+      ("tool_input"
+       (jcode-native--mark-busy connection)
+       (jcode-render-tool chat event t))
+      ("tool_exec"
+       (jcode-native--mark-busy connection)
+       (jcode-render-tool chat event t))
+      ("tool_done"
+       (jcode-native--mark-busy connection)
+       (jcode-render-tool chat event t))
       ("session_renamed"
        (dolist (buffer (list (jcode-native-connection-chat connection)
                              (jcode-native-connection-input connection)))

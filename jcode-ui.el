@@ -46,6 +46,10 @@
 (defvar-local jcode--display-model nil)
 (defvar-local jcode--killing-linked-buffer nil)
 
+(defun jcode--normalize-directory (dir)
+  "Normalize DIR for project/session comparisons."
+  (file-name-as-directory (expand-file-name dir)))
+
 (defun jcode--kill-linked-buffer ()
   "Kill the chat/input buffer paired with the current jcode buffer."
   (unless jcode--killing-linked-buffer
@@ -168,12 +172,20 @@
     (cons chat input)))
 
 (defun jcode--display-buffers (chat input)
-  "Display CHAT above INPUT and focus INPUT."
-  (let ((chat-window (display-buffer chat '(display-buffer-pop-up-window))))
-    (select-window chat-window)
-    (let ((input-window (split-window chat-window (- jcode-input-window-height) 'below)))
-      (set-window-buffer input-window input)
-      (select-window input-window))))
+  "Display CHAT above INPUT and focus INPUT.
+If both buffers are already visible in the selected frame, preserve the layout
+and only focus INPUT, matching `pi-coding-agent' behavior."
+  (let ((chat-window (get-buffer-window chat nil))
+        (input-window (get-buffer-window input nil)))
+    (if (and (window-live-p chat-window) (window-live-p input-window))
+        (select-window input-window)
+      (let ((chat-window (or chat-window
+                             (display-buffer chat '(display-buffer-pop-up-window)))))
+        (select-window chat-window)
+        (let ((input-window (or input-window
+                                (split-window chat-window (- jcode-input-window-height) 'below))))
+          (set-window-buffer input-window input)
+          (select-window input-window))))))
 
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."

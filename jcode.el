@@ -19,6 +19,7 @@
 ;;; Code:
 
 (require 'subr-x)
+(require 'cl-lib)
 (require 'jcode-ui)
 (require 'jcode-session)
 (require 'jcode-native)
@@ -41,6 +42,27 @@
     (and (buffer-live-p jcode--chat-buffer)
          (cons jcode--chat-buffer (current-buffer))))))
 
+(defun jcode-project-buffers (&optional directory)
+  "Return live jcode chat buffers for DIRECTORY's project.
+Buffers are ordered by `buffer-list' recency, most recent first."
+  (let ((target (jcode--normalize-directory
+                 (or directory (jcode--project-directory)))))
+    (cl-remove-if-not
+     (lambda (buffer)
+       (and (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (and (derived-mode-p 'jcode-chat-mode)
+                   (string= (jcode--normalize-directory default-directory)
+                            target)))))
+     (buffer-list))))
+
+(defun jcode--show-session-buffers (chat input)
+  "Show CHAT and INPUT, focusing input when visible."
+  (unless (and (buffer-live-p chat) (buffer-live-p input))
+    (user-error "No complete jcode session buffers"))
+  (jcode--display-buffers chat input)
+  chat)
+
 ;;;###autoload
 (defun jcode (&optional session-id)
   "Open or create a jcode session for the current project.
@@ -48,10 +70,11 @@ With prefix argument, prompt for SESSION-ID and load that session."
   (interactive
    (list (when current-prefix-arg
            (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
-  (if-let ((pair (and (not session-id) (jcode--current-buffer-pair))))
-      (progn
-        (jcode--display-buffers (car pair) (cdr pair))
-        (car pair))
+  (if-let ((pair (and (not session-id)
+                     (or (jcode--current-buffer-pair)
+                         (when-let ((chat (car (jcode-project-buffers))))
+                           (cons chat (buffer-local-value 'jcode--input-buffer chat)))))))
+      (jcode--show-session-buffers (car pair) (cdr pair))
     (let* ((dir (jcode--project-directory))
          (buffers (jcode--make-buffers dir session-id))
          (chat (car buffers))

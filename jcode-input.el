@@ -6,7 +6,7 @@
 
 (require 'ring)
 (require 'cl-lib)
-(require 'project)
+(require 'seq)
 (require 'subr-x)
 (require 'jcode-ui)
 (require 'jcode-render)
@@ -26,20 +26,50 @@
 (defvar-local jcode--input-ring nil)
 (defvar-local jcode--input-ring-index nil)
 (defvar-local jcode--input-saved nil)
+(defvar-local jcode--project-files-cache nil)
+(defvar-local jcode--project-files-cache-time nil)
+
+(defconst jcode--file-exclude-patterns
+  '(".git" ".jj" "node_modules" ".elpa" "target" "build" "__pycache__" ".venv" "dist" ".direnv")
+  "Directory names excluded from project file completion fallback scans.")
+
+(defun jcode--file-cache-valid-p ()
+  "Return non-nil when the project file completion cache is still fresh."
+  (and jcode--project-files-cache
+       jcode--project-files-cache-time
+       (< (float-time (time-subtract (current-time) jcode--project-files-cache-time))
+          30)))
+
+(defun jcode--find-project-files (directory)
+  "Return project-relative files in DIRECTORY using pi-style discovery."
+  (let* ((default-directory (file-name-as-directory (expand-file-name directory)))
+         (git-output (and (executable-find "git")
+                          (shell-command-to-string
+                           "git ls-files --cached --others --exclude-standard 2>/dev/null")))
+         (git-files (and git-output
+                         (seq-filter (lambda (file) (not (string-empty-p file)))
+                                     (split-string git-output "\n" t)))))
+    (or git-files
+        (let ((find-command
+               (concat "find . -type f "
+                       (mapconcat (lambda (pattern)
+                                    (format "-not -path '*/%s/*'" pattern))
+                                  jcode--file-exclude-patterns
+                                  " "))))
+          (mapcar (lambda (file)
+                    (string-remove-prefix "./" file))
+                  (seq-filter (lambda (file)
+                                (not (string-empty-p file)))
+                              (split-string (shell-command-to-string find-command) "\n" t)))))))
 
 (defun jcode--project-file-candidates ()
   "Return project-relative file candidates for the current buffer."
-  (let* ((project (project-current nil))
-         (root (file-name-as-directory
-                (or (and project (project-root project)) default-directory))))
-    (mapcar (lambda (file) (file-relative-name file root))
-            (if project
-                (project-files project)
-              (directory-files-recursively root "^[^.]" nil
-                                           (lambda (dir)
-                                            (not (member (file-name-nondirectory
-                                                           (directory-file-name dir))
-                                                          '(".git" ".jj" "node_modules" ".direnv")))))))))
+  (unless (jcode--file-cache-valid-p)
+    (setq jcode--project-files-cache
+          (jcode--find-project-files (jcode--project-directory))
+          jcode--project-files-cache-time
+          (current-time)))
+  jcode--project-files-cache)
 
 (defun jcode--complete-file-reference ()
   "Complete file reference after a typed @."

@@ -51,7 +51,7 @@ Input buffer keys:
 - =C-c C-k= cancel active response
 - =C-c C-d= disconnect Emacs client
 - =M-p= / =M-n= prompt history
-- =TAB= complete slash commands/file references/paths
+- =TAB= complete file references/paths
 - =C-c C-s= steer current response while busy
 - Type =@= at a word boundary to choose a project file and insert =@path/to/file=
 

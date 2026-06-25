@@ -168,6 +168,19 @@
         (should (= (nth 0 capf) (1+ (save-excursion (search-backward "@") (point)))))
         (should (member "src/main.rs" (nth 2 capf)))))))
 
+(ert-deftest jcode-project-buffers-finds-current-project-session ()
+  (let* ((dir (file-name-as-directory default-directory))
+         (buffers (jcode--make-buffers dir "project-find"))
+         (chat (car buffers))
+         (input (cdr buffers)))
+    (unwind-protect
+        (progn
+          (should (memq chat (jcode-project-buffers dir)))
+          (with-current-buffer chat
+            (should (equal (jcode--current-buffer-pair) (cons chat input)))))
+      (kill-buffer chat)
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-current-buffer-pair-detects-chat-and-input ()
   (let* ((dir default-directory)
          (buffers (jcode--make-buffers dir "pair-test"))
@@ -288,6 +301,21 @@
     (should (equal (alist-get 'type event) "history"))
     (should (equal (alist-get 'provider_model event) "gpt"))
     (should (equal (alist-get 'content (aref (alist-get 'messages event) 0)) "hello"))))
+
+(ert-deftest jcode-native-stream-events-mark-connection-busy ()
+  (let* ((chat (generate-new-buffer " *jcode-test-native-busy-chat*"))
+         (input (generate-new-buffer " *jcode-test-native-busy-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "s-native" :cwd "/tmp")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-native--handle-event connection '((type . "text_delta") (text . "hello")))
+          (should (jcode-native-connection-busy connection))
+          (jcode-native--handle-event connection '((type . "done") (id . 1)))
+          (should-not (jcode-native-connection-busy connection)))
+      (kill-buffer chat)
+      (kill-buffer input))))
 
 (ert-deftest jcode-native-history-renders-messages-and-metadata ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-chat*"))
