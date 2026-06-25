@@ -5,6 +5,7 @@
 ;;; Code:
 
 (require 'ring)
+(require 'project)
 (require 'subr-x)
 (require 'jcode-ui)
 (require 'jcode-render)
@@ -23,6 +24,36 @@
 (defvar-local jcode--input-ring nil)
 (defvar-local jcode--input-ring-index nil)
 (defvar-local jcode--input-saved nil)
+
+(defun jcode--project-file-candidates ()
+  "Return project-relative file candidates for the current buffer."
+  (let* ((project (project-current nil))
+         (root (file-name-as-directory
+                (or (and project (project-root project)) default-directory))))
+    (mapcar (lambda (file) (file-relative-name file root))
+            (if project
+                (project-files project)
+              (directory-files-recursively root "^[^.]" nil
+                                           (lambda (dir)
+                                             (not (member (file-name-nondirectory
+                                                           (directory-file-name dir))
+                                                          '(".git" ".jj" "node_modules" ".direnv")))))))))
+
+(defun jcode--read-project-file (&optional prompt)
+  "Read a project-relative file with PROMPT."
+  (completing-read (or prompt "Project file: ")
+                   (jcode--project-file-candidates)
+                   nil t))
+
+(defun jcode-insert-file-reference ()
+  "Insert an @FILE reference chosen from project files."
+  (interactive)
+  (insert "@" (jcode--read-project-file "@ file: ")))
+
+(defun jcode-insert-project-file ()
+  "Insert a project-relative file path chosen from completion."
+  (interactive)
+  (insert (jcode--read-project-file "/ file: ")))
 
 (defun jcode--chat-buffer-for-command ()
   "Return chat buffer relevant to the current jcode command."

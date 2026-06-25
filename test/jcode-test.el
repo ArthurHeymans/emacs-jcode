@@ -147,6 +147,37 @@
     (should (equal (jcode--session-display-title active) "server alpha"))
     (should (equal (jcode--session-display-title closed) "beta"))))
 
+(ert-deftest jcode-input-file-completion-keybindings-exist ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (should (eq (key-binding (kbd "@")) #'jcode-insert-file-reference))
+    (should (eq (key-binding (kbd "/")) #'jcode-insert-project-file))))
+
+(ert-deftest jcode-insert-file-reference-and-path-use-project-completion ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (cl-letf (((symbol-function 'jcode--read-project-file)
+               (lambda (&optional _prompt) "src/main.rs")))
+      (jcode-insert-file-reference)
+      (should (equal (buffer-string) "@src/main.rs"))
+      (erase-buffer)
+      (jcode-insert-project-file)
+      (should (equal (buffer-string) "src/main.rs")))))
+
+(ert-deftest jcode-current-buffer-pair-detects-chat-and-input ()
+  (let* ((dir default-directory)
+         (buffers (jcode--make-buffers dir "pair-test"))
+         (chat (car buffers))
+         (input (cdr buffers)))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (should (equal (jcode--current-buffer-pair) (cons chat input))))
+          (with-current-buffer input
+            (should (equal (jcode--current-buffer-pair) (cons chat input)))))
+      (kill-buffer chat)
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
   (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
                      jcode-send jcode-cancel jcode-disconnect))

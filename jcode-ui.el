@@ -15,6 +15,8 @@
 (declare-function jcode-disconnect "jcode-input")
 (declare-function jcode-previous-input "jcode-input")
 (declare-function jcode-next-input "jcode-input")
+(declare-function jcode-insert-file-reference "jcode-input")
+(declare-function jcode-insert-project-file "jcode-input")
 
 (defgroup jcode nil
   "Emacs frontend for jcode."
@@ -99,10 +101,21 @@
     (define-key map (kbd "C-c C-c") #'jcode-send)
     (define-key map (kbd "C-c C-k") #'jcode-cancel)
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
+    (define-key map (kbd "@") #'jcode-insert-file-reference)
+    (define-key map (kbd "/") #'jcode-insert-project-file)
     (define-key map (kbd "M-p") #'jcode-previous-input)
     (define-key map (kbd "M-n") #'jcode-next-input)
     map)
   "Keymap for `jcode-input-mode'.")
+
+;; Keep keymaps current when this package is reloaded during development.
+(define-key jcode-input-mode-map (kbd "C-c C-c") #'jcode-send)
+(define-key jcode-input-mode-map (kbd "C-c C-k") #'jcode-cancel)
+(define-key jcode-input-mode-map (kbd "C-c C-d") #'jcode-disconnect)
+(define-key jcode-input-mode-map (kbd "@") #'jcode-insert-file-reference)
+(define-key jcode-input-mode-map (kbd "/") #'jcode-insert-project-file)
+(define-key jcode-input-mode-map (kbd "M-p") #'jcode-previous-input)
+(define-key jcode-input-mode-map (kbd "M-n") #'jcode-next-input)
 
 (define-derived-mode jcode-input-mode text-mode "Jcode-Input"
   "Major mode for composing jcode prompts."

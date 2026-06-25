@@ -18,6 +18,7 @@
 
 ;;; Code:
 
+(require 'subr-x)
 (require 'jcode-ui)
 (require 'jcode-session)
 (require 'jcode-native)
@@ -30,6 +31,16 @@
 (declare-function jcode-native-open-session "jcode-native"
                   (session-id cwd chat input))
 
+(defun jcode--current-buffer-pair ()
+  "Return current jcode buffer pair as (CHAT . INPUT), if any."
+  (cond
+   ((derived-mode-p 'jcode-chat-mode)
+    (and (buffer-live-p jcode--input-buffer)
+         (cons (current-buffer) jcode--input-buffer)))
+   ((derived-mode-p 'jcode-input-mode)
+    (and (buffer-live-p jcode--chat-buffer)
+         (cons jcode--chat-buffer (current-buffer))))))
+
 ;;;###autoload
 (defun jcode (&optional session-id)
   "Open or create a jcode session for the current project.
@@ -37,16 +48,20 @@ With prefix argument, prompt for SESSION-ID and load that session."
   (interactive
    (list (when current-prefix-arg
            (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
-  (let* ((dir (jcode--project-directory))
+  (if-let ((pair (and (not session-id) (jcode--current-buffer-pair))))
+      (progn
+        (jcode--display-buffers (car pair) (cdr pair))
+        (car pair))
+    (let* ((dir (jcode--project-directory))
          (buffers (jcode--make-buffers dir session-id))
          (chat (car buffers))
          (input (cdr buffers)))
-    (when session-id
-      (jcode-apply-session-info-to-buffers session-id chat input))
-    (jcode--display-buffers chat input)
-    (unless (buffer-local-value 'jcode--session chat)
-      (jcode-session-start dir chat input session-id nil))
-    chat))
+      (when session-id
+        (jcode-apply-session-info-to-buffers session-id chat input))
+      (jcode--display-buffers chat input)
+      (unless (buffer-local-value 'jcode--session chat)
+        (jcode-session-start dir chat input session-id nil))
+      chat)))
 
 ;;;###autoload
 (defun jcode-resume (session-id &optional full-load)
