@@ -9,6 +9,21 @@
 
 (declare-function emacs-jcode-session-chat-buffer "emacs-jcode-acp")
 
+(defun emacs-jcode--sanitize-text (text)
+  "Strip terminal control sequences and undesirable control chars from TEXT."
+  (when text
+    (let ((s text))
+      ;; OSC sequences, including terminal-title updates: ESC ] ... BEL/ST.
+      (setq s (replace-regexp-in-string "\033\\][^\a]*\a" "" s))
+      ;; Some captured logs lose the ESC byte but keep the OSC payload.
+      (setq s (replace-regexp-in-string "^\\]0;[^\a\n\r]*\a" "" s))
+      (setq s (replace-regexp-in-string "\n\\]0;[^\a\n\r]*\a" "\n" s))
+      (setq s (replace-regexp-in-string "\r\\]0;[^\a\n\r]*\a" "\r" s))
+      ;; CSI SGR/control sequences.
+      (setq s (replace-regexp-in-string "\033\\[[0-?]*[ -/]*[@-~]" "" s))
+      ;; Keep newline, tab, and carriage return; remove other C0 controls.
+      (replace-regexp-in-string "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]" "" s))))
+
 (defun emacs-jcode--alist-get-any (keys alist)
   "Return first present value for KEYS in ALIST."
   (catch 'found
@@ -19,7 +34,7 @@
 (defun emacs-jcode--content-text (content)
   "Extract textual content from ACP CONTENT value."
   (cond
-   ((stringp content) content)
+   ((stringp content) (emacs-jcode--sanitize-text content))
    ((vectorp content)
     (mapconcat (lambda (item)
                  (or (and (listp item) (emacs-jcode--alist-get-any '(text content) item)) ""))
@@ -37,12 +52,13 @@
 (defun emacs-jcode-render-user (chat text)
   "Render user TEXT in CHAT."
   (emacs-jcode--section chat "You" 'emacs-jcode-user-face)
-  (emacs-jcode--append chat (concat text "\n")))
+  (emacs-jcode--append chat (concat (emacs-jcode--sanitize-text text) "\n")))
 
 (defun emacs-jcode-render-assistant-delta (chat text)
   "Render assistant delta TEXT in CHAT."
-  (when (and text (not (string-empty-p text)))
-    (emacs-jcode--append chat text)))
+  (let ((text (emacs-jcode--sanitize-text text)))
+    (when (and text (not (string-empty-p text)))
+      (emacs-jcode--append chat text))))
 
 (defun emacs-jcode--last-heading (buffer)
   "Return the last simple setext heading title in BUFFER, or nil."
@@ -68,7 +84,7 @@
                      (if (stringp raw) raw (format "%S" raw))))))
     (emacs-jcode--append chat (format "\n[%s: %s]\n" name status) 'emacs-jcode-tool-face)
     (when (and text (not (string-empty-p text)))
-      (emacs-jcode--append chat (concat text "\n") 'emacs-jcode-tool-face))))
+      (emacs-jcode--append chat (concat (emacs-jcode--sanitize-text text) "\n") 'emacs-jcode-tool-face))))
 
 (defun emacs-jcode-render-info (chat text)
   "Render informational TEXT in CHAT."

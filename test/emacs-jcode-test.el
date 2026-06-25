@@ -48,6 +48,12 @@
             (should (string-match-p "hi" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest emacs-jcode-sanitize-text-strips-terminal-controls ()
+  (should (equal (emacs-jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
+                 "hello red"))
+  (should (equal (emacs-jcode--sanitize-text "]0;title\aTests pass")
+                 "Tests pass")))
+
 (ert-deftest emacs-jcode-input-history-roundtrip ()
   (with-temp-buffer
     (emacs-jcode-input-mode)
