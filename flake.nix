@@ -35,7 +35,8 @@
             !lib.hasSuffix ".elc" base
             && base != ".jj"
             && base != ".git"
-            && base != "result";
+            && base != "result"
+            && base != "test";
         };
 
         jcode = pkgs.rustPlatform.buildRustPackage {
@@ -111,7 +112,10 @@
 
         checks.default = pkgs.runCommand "emacs-jcode-check" { nativeBuildInputs = [ pkgs.emacs ]; } ''
           cp ${packageSrc}/*.el .
+          mkdir test
+          cp ${./test}/*.el test/
           emacs --batch -Q -L . -f batch-byte-compile *.el
+          emacs --batch -Q -L . -L test -l test/emacs-jcode-test.el -f ert-run-tests-batch-and-exit
           touch $out
         '';
 

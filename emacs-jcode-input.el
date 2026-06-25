@@ -69,6 +69,8 @@
                        (buffer-local-value 'emacs-jcode--session chat))))
     (when (string-empty-p text) (user-error "Prompt is empty"))
     (unless session (user-error "No jcode session"))
+    (when (emacs-jcode-session-busy session)
+      (user-error "Jcode is busy; wait for the current request or cancel it"))
     (emacs-jcode--history-add text)
     (delete-region (point-min) (point-max))
     (emacs-jcode-render-user chat text)

@@ -16,15 +16,23 @@
       (let ((cell (assq key alist)))
         (when cell (throw 'found (cdr cell)))))))
 
+(defun emacs-jcode--content-text (content)
+  "Extract textual content from ACP CONTENT value."
+  (cond
+   ((stringp content) content)
+   ((vectorp content)
+    (mapconcat (lambda (item)
+                 (or (and (listp item) (emacs-jcode--alist-get-any '(text content) item)) ""))
+               content ""))
+   ((listp content)
+    (or (emacs-jcode--alist-get-any '(text content) content)
+        (format "%S" content)))
+   (content (format "%S" content))))
+
 (defun emacs-jcode--event-text (params)
   "Extract text from ACP notification PARAMS."
-  (or (emacs-jcode--alist-get-any '(content text delta chunk) params)
-      (when-let ((content (alist-get 'content params)))
-        (cond ((stringp content) content)
-              ((vectorp content)
-               (mapconcat (lambda (item)
-                            (or (and (listp item) (emacs-jcode--alist-get-any '(text content) item)) ""))
-                          content ""))))))
+  (or (emacs-jcode--alist-get-any '(text delta chunk) params)
+      (emacs-jcode--content-text (alist-get 'content params))))
 
 (defun emacs-jcode-render-user (chat text)
   "Render user TEXT in CHAT."
@@ -55,12 +63,38 @@
   "Render error TEXT in CHAT."
   (emacs-jcode--append chat (concat "\nError: " text "\n") 'emacs-jcode-error-face))
 
+(defun emacs-jcode--handle-session-update (session params)
+  "Render ACP session/update PARAMS for SESSION."
+  (let* ((update (alist-get 'update params))
+         (kind (alist-get 'sessionUpdate update)))
+    (pcase kind
+      ("agent_message_chunk"
+       (emacs-jcode-render-assistant-delta
+        (emacs-jcode-session-chat-buffer session)
+        (emacs-jcode--event-text update)))
+      ("user_message_chunk"
+       (emacs-jcode-render-user
+        (emacs-jcode-session-chat-buffer session)
+        (or (emacs-jcode--event-text update) "")))
+      ("tool_call"
+       (emacs-jcode-render-tool (emacs-jcode-session-chat-buffer session) update nil))
+      ("tool_call_update"
+       (emacs-jcode-render-tool (emacs-jcode-session-chat-buffer session) update t))
+      (_
+       (emacs-jcode-render-info
+        (emacs-jcode-session-chat-buffer session)
+        (format "session/update %S" params))))))
+
 (defun emacs-jcode-handle-notification (session method params)
   "Render ACP notification METHOD/PARAMS for SESSION."
   (let ((chat (emacs-jcode-session-chat-buffer session)))
     (pcase method
+      ("session/update"
+       (emacs-jcode--handle-session-update session params))
       ("agent_message_chunk"
        (emacs-jcode-render-assistant-delta chat (emacs-jcode--event-text params)))
+      ("user_message_chunk"
+       (emacs-jcode-render-user chat (or (emacs-jcode--event-text params) "")))
       ("tool_call"
        (emacs-jcode-render-tool chat params nil))
       ("tool_call_update"
