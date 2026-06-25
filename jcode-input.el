@@ -6,9 +6,9 @@
 
 (require 'ring)
 (require 'subr-x)
-(require 'emacs-jcode-ui)
-(require 'emacs-jcode-render)
-(require 'emacs-jcode-native)
+(require 'jcode-ui)
+(require 'jcode-render)
+(require 'jcode-native)
 
 (declare-function jcode-session-prompt "jcode-acp")
 (declare-function jcode-session-cancel "jcode-acp")
@@ -118,5 +118,5 @@
      (session (jcode-session-close session))
      (t (user-error "No jcode session")))))
 
-(provide 'emacs-jcode-input)
+(provide 'jcode-input)
 ;;; jcode-input.el ends here

@@ -5,7 +5,7 @@
 ;;; Code:
 
 (require 'ert)
-(require 'emacs-jcode)
+(require 'jcode)
 
 (ert-deftest jcode-acp-prompt-params-use-content-blocks ()
   (let ((session (jcode--make-session :id "s1" :cwd "/tmp")))
@@ -158,8 +158,7 @@
   (fset 'emacs-jcode-stale-test (lambda () t))
   (should (fboundp 'emacs-jcode-stale-test))
   (jcode--undefine-old-emacs-prefixed-functions)
-  (should-not (fboundp 'emacs-jcode-stale-test))
-  (should (eq (symbol-value 'emacs-jcode-program) (symbol-value 'jcode-program))))
+  (should-not (fboundp 'emacs-jcode-stale-test)))
 
 (ert-deftest jcode-list-refresh-is-command ()
   (should (commandp #'jcode-list-refresh)))

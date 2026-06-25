@@ -11,7 +11,7 @@
 (require 'json)
 (require 'tabulated-list)
 (require 'subr-x)
-(require 'emacs-jcode-ui)
+(require 'jcode-ui)
 
 (declare-function jcode-resume "jcode" (session-id &optional full-load))
 
@@ -246,5 +246,5 @@ With prefix argument RESUME-ONLY, attach without replay."
   (setq tabulated-list-padding 2)
   (tabulated-list-init-header))
 
-(provide 'emacs-jcode-session)
+(provide 'jcode-session)
 ;;; jcode-session.el ends here

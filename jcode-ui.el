@@ -167,5 +167,5 @@
   "Append a section TITLE to BUFFER using FACE."
   (jcode--append buffer (format "\n%s\n%s\n" title (make-string (length title) ?=)) face))
 
-(provide 'emacs-jcode-ui)
+(provide 'jcode-ui)
 ;;; jcode-ui.el ends here

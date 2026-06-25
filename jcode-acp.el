@@ -7,8 +7,8 @@
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
-(require 'emacs-jcode-ui)
-(require 'emacs-jcode-render)
+(require 'jcode-ui)
+(require 'jcode-render)
 
 (defcustom jcode-program "jcode"
   "Program used to launch jcode clients such as `jcode acp'."
@@ -270,5 +270,5 @@ When SESSION-ID is non-nil, load or resume it depending on RESUME-ONLY."
          (jcode-session-new s))))
     session))
 
-(provide 'emacs-jcode-acp)
+(provide 'jcode-acp)
 ;;; jcode-acp.el ends here

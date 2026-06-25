@@ -18,11 +18,11 @@
 
 ;;; Code:
 
-(require 'emacs-jcode-ui)
-(require 'emacs-jcode-session)
-(require 'emacs-jcode-native)
-(require 'emacs-jcode-acp)
-(require 'emacs-jcode-input)
+(require 'jcode-ui)
+(require 'jcode-session)
+(require 'jcode-native)
+(require 'jcode-acp)
+(require 'jcode-input)
 
 (declare-function jcode-apply-session-info-to-buffers "jcode-session"
                   (session-id chat input))
@@ -108,15 +108,5 @@ With prefix argument ANY-DIRECTORY, resume the globally latest known session."
 
 (jcode--undefine-old-emacs-prefixed-functions)
 
-;; Backward compatibility for old custom variables only.  Commands/functions
-;; intentionally use the shorter `jcode-*' prefix.
-(defvaralias 'emacs-jcode-program 'jcode-program)
-(defvaralias 'emacs-jcode-acp-extra-args 'jcode-acp-extra-args)
-(defvaralias 'emacs-jcode-input-window-height 'jcode-input-window-height)
-(defvaralias 'emacs-jcode-sessions-directory 'jcode-sessions-directory)
-(defvaralias 'emacs-jcode-native-poll-interval 'jcode-native-poll-interval)
-(defvaralias 'emacs-jcode-native-take-over-active-session
-  'jcode-native-take-over-active-session)
-
-(provide 'emacs-jcode)
+(provide 'jcode)
 ;;; jcode.el ends here

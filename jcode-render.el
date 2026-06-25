@@ -4,7 +4,7 @@
 
 ;;; Code:
 
-(require 'emacs-jcode-ui)
+(require 'jcode-ui)
 (require 'subr-x)
 
 (declare-function jcode-session-chat-buffer "jcode-acp")
@@ -137,5 +137,5 @@
       (_
        (jcode-render-info chat (format "%s %S" method params))))))
 
-(provide 'emacs-jcode-render)
+(provide 'jcode-render)
 ;;; jcode-render.el ends here

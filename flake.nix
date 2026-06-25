@@ -94,8 +94,8 @@
         };
       in
       {
-        packages.emacs-jcode = pkgs.emacsPackages.trivialBuild {
-          pname = "emacs-jcode";
+        packages.jcode-emacs = pkgs.emacsPackages.trivialBuild {
+          pname = "jcode-emacs";
           version = "0.1.0";
           src = packageSrc;
           packageRequires = [ ];
@@ -106,16 +106,16 @@
         };
 
         packages.jcode = jcode;
-        packages.default = self.packages.${system}.emacs-jcode;
+        packages.default = self.packages.${system}.jcode-emacs;
 
         apps.jcode = flake-utils.lib.mkApp { drv = jcode; };
 
-        checks.default = pkgs.runCommand "emacs-jcode-check" { nativeBuildInputs = [ pkgs.emacs ]; } ''
+        checks.default = pkgs.runCommand "jcode-emacs-check" { nativeBuildInputs = [ pkgs.emacs ]; } ''
           cp ${packageSrc}/*.el .
           mkdir test
           cp ${./test}/*.el test/
           emacs --batch -Q -L . -f batch-byte-compile *.el
-          emacs --batch -Q -L . -L test -l test/emacs-jcode-test.el -f ert-run-tests-batch-and-exit
+          emacs --batch -Q -L . -L test -l test/jcode-test.el -f ert-run-tests-batch-and-exit
           touch $out
         '';
 

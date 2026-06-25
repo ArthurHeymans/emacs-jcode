@@ -7,9 +7,9 @@
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
-(require 'emacs-jcode-ui)
-(require 'emacs-jcode-render)
-(require 'emacs-jcode-session)
+(require 'jcode-ui)
+(require 'jcode-render)
+(require 'jcode-session)
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
   process chat input session-id cwd next-id line-buffer poll-timer last-history-size)
@@ -214,5 +214,5 @@ history."
                           #'jcode-native--poll connection))
     connection))
 
-(provide 'emacs-jcode-native)
+(provide 'jcode-native)
 ;;; jcode-native.el ends here
