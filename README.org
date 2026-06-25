@@ -38,6 +38,8 @@ Commands:
 - =C-u M-x jcode= picks an existing session id and loads it.
 - =M-x jcode-current= resumes the latest known session for the current project.
 - =C-u M-x jcode-current= resumes the globally latest known session.
+- =M-x jcode-connect=, also =M-x jcode-attach=, connects to a session through the native socket and requests takeover for live updates.
+- =M-x jcode-reconnect= from a jcode chat/input reconnects the current session with native takeover, useful after another UI client owns the stream.
 - =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay or =r= to resume without replay.
 - =M-x jcode-resume= picks a session id and resumes without full replay.
 - =C-u M-x jcode-resume= loads with history replay.

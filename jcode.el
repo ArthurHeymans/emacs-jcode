@@ -31,6 +31,7 @@
 (declare-function jcode-session-teardown "jcode-acp" (session))
 (declare-function jcode-native-open-session "jcode-native"
                   (session-id cwd chat input))
+(declare-function jcode-native-close "jcode-native" (connection))
 
 (defun jcode--current-buffer-pair ()
   "Return current jcode buffer pair as (CHAT . INPUT), if any."
@@ -62,6 +63,60 @@ Buffers are ordered by `buffer-list' recency, most recent first."
     (user-error "No complete jcode session buffers"))
   (jcode--display-buffers chat input)
   chat)
+
+(defun jcode--current-session-id ()
+  "Return the current jcode session id, if known."
+  (cond
+   ((derived-mode-p 'jcode-chat-mode 'jcode-input-mode)
+    jcode--display-session-id)
+   ((when-let ((pair (jcode--current-buffer-pair)))
+      (with-current-buffer (car pair)
+        jcode--display-session-id)))))
+
+(defun jcode--read-connect-session-id ()
+  "Read a session id for native connect, defaulting to the current session."
+  (let ((default (jcode--current-session-id)))
+    (if default
+        (let ((value (read-string (format "Connect jcode session (default %s): " default)
+                                  nil nil default)))
+          (if (string-empty-p value) default value))
+      (jcode-read-session-id (jcode--project-directory) "Connect jcode session: "))))
+
+(defun jcode--native-connect (session-id &optional force)
+  "Connect buffers to SESSION-ID through the native socket.
+When FORCE is non-nil, close any existing Emacs connection first and request
+session takeover so this client receives live streaming updates."
+  (let* ((dir (jcode--project-directory))
+         (current-pair (jcode--current-buffer-pair))
+         (buffers (or (and current-pair
+                           (let ((current-id (with-current-buffer (car current-pair)
+                                               jcode--display-session-id)))
+                             (or (not session-id)
+                                 (not current-id)
+                                 (string= session-id current-id)))
+                           current-pair)
+                      (jcode--make-buffers dir session-id)))
+         (chat (car buffers))
+         (input (cdr buffers)))
+    (unless session-id
+      (setq session-id (with-current-buffer chat jcode--display-session-id)))
+    (unless (and session-id (not (string-empty-p session-id)))
+      (user-error "No jcode session id to connect"))
+    (jcode-apply-session-info-to-buffers session-id chat input)
+    (jcode--display-buffers chat input)
+    (when force
+      (when-let ((native (buffer-local-value 'jcode--native-connection chat)))
+        (jcode-native-close native)
+        (with-current-buffer chat (setq jcode--native-connection nil))
+        (with-current-buffer input (setq jcode--native-connection nil)))
+      (when-let ((session (buffer-local-value 'jcode--session chat)))
+        (jcode-session-teardown session)
+        (with-current-buffer chat (setq jcode--session nil))
+        (with-current-buffer input (setq jcode--session nil))))
+    (unless (buffer-local-value 'jcode--native-connection chat)
+      (let ((jcode-native-take-over-active-session t))
+        (jcode-native-open-session session-id dir chat input)))
+    chat))
 
 ;;;###autoload
 (defun jcode (&optional session-id)
@@ -103,6 +158,27 @@ With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
     (unless (buffer-local-value 'jcode--native-connection chat)
       (jcode-native-open-session session-id dir chat input))
     chat))
+
+;;;###autoload
+(defun jcode-connect (session-id)
+  "Connect to SESSION-ID using native takeover for live streaming updates.
+This asks the jcode daemon to transfer the live session to this Emacs client,
+which disconnects or supersedes other active UI clients for that session."
+  (interactive (list (jcode--read-connect-session-id)))
+  (jcode--native-connect session-id t))
+
+;;;###autoload
+(defun jcode-reconnect ()
+  "Reconnect the current jcode session with native takeover.
+Use this from a jcode chat/input buffer after another client, such as ghostty,
+owns the live stream."
+  (interactive)
+  (unless (derived-mode-p 'jcode-chat-mode 'jcode-input-mode)
+    (user-error "Run `jcode-reconnect' from a jcode chat or input buffer"))
+  (jcode--native-connect (jcode--current-session-id) t))
+
+;;;###autoload
+(defalias 'jcode-attach #'jcode-connect)
 
 ;;;###autoload
 (defun jcode-current (&optional any-directory)

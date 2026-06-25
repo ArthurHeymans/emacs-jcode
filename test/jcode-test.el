@@ -195,8 +195,36 @@
       (kill-buffer chat)
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-reconnect-reuses-current-buffers-and-forces-native-takeover ()
+  (let* ((dir default-directory)
+         (buffers (jcode--make-buffers dir "reconnect-test"))
+         (chat (car buffers))
+         (input (cdr buffers))
+         (old (jcode--make-native-connection :chat chat :input input
+                                             :session-id "reconnect-test"
+                                             :cwd dir))
+         closed opened takeover)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode--display-buffers) #'ignore)
+                  ((symbol-function 'jcode-native-close)
+                   (lambda (connection) (setq closed connection)))
+                  ((symbol-function 'jcode-native-open-session)
+                   (lambda (session-id cwd open-chat open-input)
+                     (setq opened (list session-id cwd open-chat open-input)
+                           takeover jcode-native-take-over-active-session))))
+          (with-current-buffer chat
+            (setq jcode--display-session-id "reconnect-test"
+                  jcode--native-connection old)
+            (jcode-reconnect))
+          (should (eq closed old))
+          (should takeover)
+          (should (equal opened (list "reconnect-test" dir chat input))))
+      (kill-buffer chat)
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
   (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
+                     jcode-connect jcode-reconnect jcode-attach
                      jcode-send jcode-cancel jcode-disconnect))
     (should (commandp command)))
   (dolist (old '(emacs-jcode emacs-jcode-resume emacs-jcode-current
