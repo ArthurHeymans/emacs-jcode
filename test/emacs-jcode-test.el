@@ -96,6 +96,20 @@
           (should (equal (emacs-jcode-session-info-model info) "gpt")))
       (delete-file file))))
 
+(ert-deftest emacs-jcode-read-session-info-parses-large-transcripts ()
+  (let* ((large (make-string 150000 ?x))
+         (file (make-temp-file
+                "emacs-jcode-large-session" nil ".json"
+                (format "{\"id\":\"large\",\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":%S}]}],\"working_dir\":\"/tmp/project\",\"short_name\":\"fixture\",\"status\":\"Active\",\"updated_at\":\"2026-01-02T00:00:00Z\"}"
+                        large))))
+    (unwind-protect
+        (let ((info (emacs-jcode--read-session-info file)))
+          (should info)
+          (should (equal (emacs-jcode-session-info-id info) "large"))
+          (should (equal (emacs-jcode-session-info-short-name info) "fixture"))
+          (should (equal (emacs-jcode-session-info-status info) "Active")))
+      (delete-file file))))
+
 (ert-deftest emacs-jcode-latest-session-filters-current-directory ()
   (let* ((root (make-temp-file "emacs-jcode-sessions" t))
          (project-a (file-name-as-directory (expand-file-name "a" root)))
@@ -116,6 +130,16 @@
           (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a t)) "new"))
           (should (equal (emacs-jcode-session-info-id (emacs-jcode-latest-session project-a nil)) "other")))
       (delete-directory root t))))
+
+(ert-deftest emacs-jcode-session-display-title-prefixes-active-server ()
+  (let ((active (emacs-jcode--make-session-info :short-name "alpha"
+                                                :status "Active"
+                                                :server-name "server"))
+        (closed (emacs-jcode--make-session-info :short-name "beta"
+                                                :status "Closed"
+                                                :server-name "server")))
+    (should (equal (emacs-jcode--session-display-title active) "server alpha"))
+    (should (equal (emacs-jcode--session-display-title closed) "beta"))))
 
 (provide 'emacs-jcode-test)
 ;;; emacs-jcode-test.el ends here

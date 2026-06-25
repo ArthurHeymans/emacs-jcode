@@ -23,7 +23,8 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   :group 'emacs-jcode)
 
 (cl-defstruct (emacs-jcode-session-info (:constructor emacs-jcode--make-session-info))
-  id title short-name working-dir status model provider updated-at created-at file)
+  id title short-name working-dir status model provider updated-at created-at file
+  last-pid server-name)
 
 (defvar-local emacs-jcode--session-list-directory nil)
 
@@ -37,6 +38,29 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
    (or emacs-jcode-sessions-directory
        (concat (or (emacs-jcode--remote-prefix directory) "") "~/.jcode/sessions"))))
 
+(defun emacs-jcode--servers-file (&optional directory)
+  "Return jcode servers registry path for DIRECTORY's host."
+  (concat (or (emacs-jcode--remote-prefix directory) "") "~/.jcode/servers.json"))
+
+(defun emacs-jcode--server-name-by-pid (&optional directory)
+  "Return alist mapping live jcode server pid to server name."
+  (let ((file (emacs-jcode--servers-file directory)))
+    (when (file-readable-p file)
+      (condition-case nil
+          (with-temp-buffer
+            (insert-file-contents file)
+            (let* ((json-object-type 'alist)
+                   (json-key-type 'symbol)
+                   (data (json-read)))
+              (delq nil
+                    (mapcar (lambda (entry)
+                              (let* ((server (cdr entry))
+                                     (pid (alist-get 'pid server))
+                                     (name (alist-get 'name server)))
+                                (and pid name (cons pid name))))
+                            data))))
+        (error nil)))))
+
 (defun emacs-jcode--safe-alist-get (key alist)
   "Return KEY from ALIST, accepting string or symbol keys."
   (or (alist-get key alist)
@@ -46,7 +70,9 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   "Read jcode session metadata from FILE."
   (condition-case nil
       (with-temp-buffer
-        (insert-file-contents file nil 0 131072)
+        ;; Session files can be large because they include full transcript content.
+        ;; Read the complete JSON so active/long sessions are not silently omitted.
+        (insert-file-contents file)
         (let* ((json-object-type 'alist)
                (json-array-type 'list)
                (json-key-type 'symbol)
@@ -64,15 +90,27 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
              :provider (emacs-jcode--safe-alist-get 'provider_key data)
              :updated-at (emacs-jcode--safe-alist-get 'updated_at data)
              :created-at (emacs-jcode--safe-alist-get 'created_at data)
-             :file file))))
+             :file file
+             :last-pid (emacs-jcode--safe-alist-get 'last_pid data)))))
     (error nil)))
+
+(defun emacs-jcode--annotate-session-server-names (sessions directory)
+  "Annotate SESSIONS with server names from DIRECTORY's server registry."
+  (let ((servers (emacs-jcode--server-name-by-pid directory)))
+    (dolist (info sessions)
+      (when-let* ((pid (emacs-jcode-session-info-last-pid info))
+                  (server-name (cdr (assq pid servers))))
+        (setf (emacs-jcode-session-info-server-name info) server-name)))
+    sessions))
 
 (defun emacs-jcode-list-sessions-data (&optional directory)
   "Return discovered jcode session metadata for DIRECTORY's host."
   (let ((dir (emacs-jcode--sessions-directory directory)))
     (when (file-directory-p dir)
-      (sort (delq nil (mapcar #'emacs-jcode--read-session-info
-                              (directory-files dir t "\\.json\\'" t)))
+      (sort (emacs-jcode--annotate-session-server-names
+             (delq nil (mapcar #'emacs-jcode--read-session-info
+                               (directory-files dir t "\\.json\\'" t)))
+             directory)
             (lambda (a b)
               (string> (or (emacs-jcode-session-info-updated-at a) "")
                        (or (emacs-jcode-session-info-updated-at b) "")))))))
@@ -80,6 +118,12 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
 (defun emacs-jcode--session-display-title (info)
   "Return display title for session INFO."
   (or (emacs-jcode-session-info-title info)
+      (when (and (string= (or (emacs-jcode-session-info-status info) "") "Active")
+                 (emacs-jcode-session-info-server-name info)
+                 (emacs-jcode-session-info-short-name info))
+        (format "%s %s"
+                (emacs-jcode-session-info-server-name info)
+                (emacs-jcode-session-info-short-name info)))
       (emacs-jcode-session-info-short-name info)
       (emacs-jcode-session-info-id info)))
 
