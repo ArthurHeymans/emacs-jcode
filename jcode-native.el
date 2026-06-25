@@ -12,7 +12,7 @@
 (require 'jcode-session)
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
-  process chat input session-id cwd next-id line-buffer poll-timer last-history-size)
+  process chat input session-id cwd next-id line-buffer poll-timer last-history-size busy followup-queue)
 
 (defvar-local jcode--native-connection nil)
 
@@ -76,11 +76,23 @@ history."
 
 (defun jcode-native-message (connection content)
   "Send CONTENT as a native message through CONNECTION."
+  (setf (jcode-native-connection-busy connection) t)
   (jcode-native--request connection "message" :content content))
+
+(defun jcode-native-steer (connection content)
+  "Send CONTENT as a native soft interrupt through CONNECTION."
+  (jcode-native--request connection "soft_interrupt" :content content :urgent t))
 
 (defun jcode-native-cancel (connection)
   "Cancel current native generation for CONNECTION."
   (jcode-native--request connection "cancel"))
+
+(defun jcode-native--drain-followup (connection)
+  "Send next queued follow-up for CONNECTION, if any."
+  (when-let ((text (pop (jcode-native-connection-followup-queue connection))))
+    (jcode-render-user (jcode-native-connection-chat connection) text)
+    (jcode--section (jcode-native-connection-chat connection) "Assistant" 'jcode-assistant-face)
+    (jcode-native-message connection text)))
 
 (defun jcode-native-close (connection)
   "Close native CONNECTION and cancel its refresh timer."
@@ -152,6 +164,10 @@ history."
         (chat (jcode-native-connection-chat connection)))
     (pcase type
       ("history" (jcode-native--render-history connection event))
+      ("ack" nil)
+      ("done"
+       (setf (jcode-native-connection-busy connection) nil)
+       (jcode-native--drain-followup connection))
       ("text_delta" (jcode-render-assistant-message chat (alist-get 'text event)))
       ("text_replace" (jcode-render-assistant-message chat (alist-get 'text event)))
       ("tool_start" (jcode-render-tool chat event nil))

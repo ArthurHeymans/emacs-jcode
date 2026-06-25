@@ -15,8 +15,11 @@
 (declare-function jcode-disconnect "jcode-input")
 (declare-function jcode-previous-input "jcode-input")
 (declare-function jcode-next-input "jcode-input")
-(declare-function jcode-insert-file-reference "jcode-input")
-(declare-function jcode-insert-project-file "jcode-input")
+(declare-function jcode-complete "jcode-input")
+(declare-function jcode-steer "jcode-input")
+(declare-function jcode--file-reference-capf "jcode-input")
+(declare-function jcode--path-capf "jcode-input")
+(declare-function jcode--maybe-complete-at "jcode-input")
 
 (defgroup jcode nil
   "Emacs frontend for jcode."
@@ -99,10 +102,10 @@
 (defvar jcode-input-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-c") #'jcode-send)
+    (define-key map (kbd "TAB") #'jcode-complete)
     (define-key map (kbd "C-c C-k") #'jcode-cancel)
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
-    (define-key map (kbd "@") #'jcode-insert-file-reference)
-    (define-key map (kbd "/") #'jcode-insert-project-file)
+    (define-key map (kbd "C-c C-s") #'jcode-steer)
     (define-key map (kbd "M-p") #'jcode-previous-input)
     (define-key map (kbd "M-n") #'jcode-next-input)
     map)
@@ -110,16 +113,22 @@
 
 ;; Keep keymaps current when this package is reloaded during development.
 (define-key jcode-input-mode-map (kbd "C-c C-c") #'jcode-send)
+(define-key jcode-input-mode-map (kbd "TAB") #'jcode-complete)
 (define-key jcode-input-mode-map (kbd "C-c C-k") #'jcode-cancel)
 (define-key jcode-input-mode-map (kbd "C-c C-d") #'jcode-disconnect)
-(define-key jcode-input-mode-map (kbd "@") #'jcode-insert-file-reference)
-(define-key jcode-input-mode-map (kbd "/") #'jcode-insert-project-file)
+(define-key jcode-input-mode-map (kbd "C-c C-s") #'jcode-steer)
+(define-key jcode-input-mode-map (kbd "@") nil)
+(define-key jcode-input-mode-map (kbd "/") nil)
 (define-key jcode-input-mode-map (kbd "M-p") #'jcode-previous-input)
 (define-key jcode-input-mode-map (kbd "M-n") #'jcode-next-input)
 
 (define-derived-mode jcode-input-mode text-mode "Jcode-Input"
   "Major mode for composing jcode prompts."
   (setq-local header-line-format '(:eval (jcode--header-line)))
+  (setq-local completion-at-point-functions nil)
+  (add-hook 'completion-at-point-functions #'jcode--file-reference-capf nil t)
+  (add-hook 'completion-at-point-functions #'jcode--path-capf nil t)
+  (add-hook 'post-self-insert-hook #'jcode--maybe-complete-at nil t)
   (add-hook 'kill-buffer-hook #'jcode--kill-linked-buffer nil t))
 
 (defun jcode--clear-chat-buffer (chat)

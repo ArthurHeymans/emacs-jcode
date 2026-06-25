@@ -5,6 +5,7 @@
 ;;; Code:
 
 (require 'ring)
+(require 'cl-lib)
 (require 'project)
 (require 'subr-x)
 (require 'jcode-ui)
@@ -15,6 +16,7 @@
 (declare-function jcode-session-cancel "jcode-acp")
 (declare-function jcode-session-close "jcode-acp")
 (declare-function jcode-native-message "jcode-native" (connection content))
+(declare-function jcode-native-steer "jcode-native" (connection content))
 (declare-function jcode-native-cancel "jcode-native" (connection))
 (declare-function jcode-native-close "jcode-native" (connection))
 
@@ -35,25 +37,72 @@
                 (project-files project)
               (directory-files-recursively root "^[^.]" nil
                                            (lambda (dir)
-                                             (not (member (file-name-nondirectory
+                                            (not (member (file-name-nondirectory
                                                            (directory-file-name dir))
                                                           '(".git" ".jj" "node_modules" ".direnv")))))))))
 
-(defun jcode--read-project-file (&optional prompt)
-  "Read a project-relative file with PROMPT."
-  (completing-read (or prompt "Project file: ")
-                   (jcode--project-file-candidates)
-                   nil t))
+(defun jcode--complete-file-reference ()
+  "Complete file reference after a typed @."
+  (let ((choice (completing-read "File: " (jcode--project-file-candidates) nil nil)))
+    (unless (string-empty-p choice)
+      (insert choice))))
 
-(defun jcode-insert-file-reference ()
-  "Insert an @FILE reference chosen from project files."
-  (interactive)
-  (insert "@" (jcode--read-project-file "@ file: ")))
+(defun jcode--at-trigger-p ()
+  "Return non-nil when a typed @ should trigger file completion."
+  (or (< (point) 3)
+      (save-excursion
+        (backward-char 2)
+        (looking-at-p "[^[:alnum:]]"))))
 
-(defun jcode-insert-project-file ()
-  "Insert a project-relative file path chosen from completion."
+(defun jcode--maybe-complete-at ()
+  "Trigger project file completion after @ at a word boundary."
+  (when (and (eq last-command-event ?@)
+             (jcode--at-trigger-p))
+    (run-at-time 0 nil #'jcode--complete-file-reference)))
+
+(defun jcode--file-reference-capf ()
+  "Completion-at-point for @file references."
+  (when-let* ((at-pos (save-excursion
+                        (when (search-backward "@" (line-beginning-position) t)
+                          (point)))))
+    (let ((start (1+ at-pos))
+          (end (point)))
+      (list start end (jcode--project-file-candidates)
+            :exclusive 'no
+            :annotation-function (lambda (_) " (file)")))))
+
+(defun jcode--path-prefix-p (path)
+  "Return non-nil if PATH should receive filename completion."
+  (or (string-prefix-p "./" path)
+      (string-prefix-p "../" path)
+      (string-prefix-p "~/" path)
+      (string-prefix-p "/" path)))
+
+(defun jcode--path-completions (path)
+  "Return file completion candidates for PATH."
+  (let* ((dir (file-name-directory path))
+         (base (file-name-nondirectory path))
+         (expanded-dir (expand-file-name (or dir "") default-directory)))
+    (when (file-directory-p expanded-dir)
+      (mapcar (lambda (file) (concat (or dir "") file))
+              (cl-remove-if (lambda (file) (member file '("." ".." "./" "../")))
+                            (file-name-all-completions base expanded-dir))))))
+
+(defun jcode--path-capf ()
+  "Completion-at-point for paths beginning with ./, ../, ~/, or /."
+  (when-let* ((bounds (bounds-of-thing-at-point 'filename))
+              (start (car bounds))
+              (end (cdr bounds))
+              (path (buffer-substring-no-properties start end))
+              ((jcode--path-prefix-p path))
+              (candidates (jcode--path-completions path)))
+    (list start end candidates :exclusive 'no)))
+
+(defun jcode-complete ()
+  "Complete at point in a jcode input buffer."
   (interactive)
-  (insert (jcode--read-project-file "/ file: ")))
+  (let ((completion-show-help nil))
+    (completion-at-point)))
 
 (defun jcode--chat-buffer-for-command ()
   "Return chat buffer relevant to the current jcode command."
@@ -108,24 +157,50 @@
       (insert (ring-ref (jcode--input-ring) idx)))))
 
 (defun jcode-send ()
-  "Send current input buffer content to jcode."
+  "Send current input buffer content to jcode.
+If a native session is busy, queue the text as a follow-up."
   (interactive)
   (let* ((text (string-trim (buffer-string)))
          (chat jcode--chat-buffer)
          (native (jcode--native-connection-for-chat chat))
          (session (and (buffer-live-p chat)
                        (buffer-local-value 'jcode--session chat))))
+    (cond
+     ((string-empty-p text)
+      (user-error "Prompt is empty"))
+     ((and native (jcode-native-connection-busy native))
+      (jcode--history-add text)
+      (delete-region (point-min) (point-max))
+      (setf (jcode-native-connection-followup-queue native)
+            (append (jcode-native-connection-followup-queue native) (list text)))
+      (message "Jcode: Message queued (will send when ready)"))
+     ((and session (jcode-session-busy session))
+      (user-error "Jcode is busy; native follow-up queue is unavailable for ACP sessions"))
+     ((or native session)
+      (jcode--history-add text)
+      (delete-region (point-min) (point-max))
+      (jcode-render-user chat text)
+      (jcode--section chat "Assistant" 'jcode-assistant-face)
+      (if native
+          (jcode-native-message native text)
+        (jcode-session-prompt session text)))
+     (t
+      (user-error "No jcode session")))))
+
+(defun jcode-steer ()
+  "Send current input as a steering message for a busy native session."
+  (interactive)
+  (let* ((text (string-trim (buffer-string)))
+         (chat jcode--chat-buffer)
+         (native (jcode--native-connection-for-chat chat)))
     (when (string-empty-p text) (user-error "Prompt is empty"))
-    (unless (or native session) (user-error "No jcode session"))
-    (when (and session (jcode-session-busy session))
-      (user-error "Jcode is busy; wait for the current request or cancel it"))
+    (unless native (user-error "No native jcode session"))
+    (unless (jcode-native-connection-busy native)
+      (user-error "Nothing to steer; use C-c C-c to send"))
     (jcode--history-add text)
     (delete-region (point-min) (point-max))
-    (jcode-render-user chat text)
-    (jcode--section chat "Assistant" 'jcode-assistant-face)
-    (if native
-        (jcode-native-message native text)
-      (jcode-session-prompt session text))))
+    (jcode-native-steer native text)
+    (message "Jcode: Steering message sent")))
 
 (defun jcode-cancel ()
   "Cancel the active jcode response."

@@ -147,22 +147,26 @@
     (should (equal (jcode--session-display-title active) "server alpha"))
     (should (equal (jcode--session-display-title closed) "beta"))))
 
-(ert-deftest jcode-input-file-completion-keybindings-exist ()
+(ert-deftest jcode-input-file-completion-capfs-exist ()
   (with-temp-buffer
     (jcode-input-mode)
-    (should (eq (key-binding (kbd "@")) #'jcode-insert-file-reference))
-    (should (eq (key-binding (kbd "/")) #'jcode-insert-project-file))))
+    (should (memq #'jcode--file-reference-capf completion-at-point-functions))
+    (should (memq #'jcode--path-capf completion-at-point-functions))
+    (should (eq (key-binding (kbd "TAB")) #'jcode-complete))
+    (should (eq (key-binding (kbd "C-c C-s")) #'jcode-steer))
+    (should (eq (key-binding (kbd "@")) #'self-insert-command))
+    (should (eq (key-binding (kbd "/")) #'self-insert-command))))
 
-(ert-deftest jcode-insert-file-reference-and-path-use-project-completion ()
+(ert-deftest jcode-file-reference-capf-completes-after-at ()
   (with-temp-buffer
     (jcode-input-mode)
-    (cl-letf (((symbol-function 'jcode--read-project-file)
-               (lambda (&optional _prompt) "src/main.rs")))
-      (jcode-insert-file-reference)
-      (should (equal (buffer-string) "@src/main.rs"))
-      (erase-buffer)
-      (jcode-insert-project-file)
-      (should (equal (buffer-string) "src/main.rs")))))
+    (insert "look @src")
+    (cl-letf (((symbol-function 'jcode--project-file-candidates)
+               (lambda () '("src/main.rs" "README.org"))))
+      (let ((capf (jcode--file-reference-capf)))
+        (should capf)
+        (should (= (nth 0 capf) (1+ (save-excursion (search-backward "@") (point)))))
+        (should (member "src/main.rs" (nth 2 capf)))))))
 
 (ert-deftest jcode-current-buffer-pair-detects-chat-and-input ()
   (let* ((dir default-directory)
@@ -216,6 +220,54 @@
           (should (equal sent (list connection "hello native")))
           (with-current-buffer chat
             (should (string-match-p "hello native" (buffer-string)))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-send-queues-native-followup-when-busy ()
+  (let* ((chat (generate-new-buffer " *jcode-test-native-queue-chat*"))
+         (input (generate-new-buffer " *jcode-test-native-queue-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "s-native" :cwd "/tmp" :busy t))
+         sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-native-message)
+                   (lambda (_conn _text) (setq sent t)))
+                  ((symbol-function 'message) #'ignore))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--native-connection connection))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (insert "queued followup")
+            (jcode-send)
+            (should (equal (buffer-string) "")))
+          (should-not sent)
+          (should (equal (jcode-native-connection-followup-queue connection)
+                         '("queued followup"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-steer-sends-native-soft-interrupt-when-busy ()
+  (let* ((chat (generate-new-buffer " *jcode-test-native-steer-chat*"))
+         (input (generate-new-buffer " *jcode-test-native-steer-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "s-native" :cwd "/tmp" :busy t))
+         steered)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-native-steer)
+                   (lambda (conn text) (setq steered (list conn text))))
+                  ((symbol-function 'message) #'ignore))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--native-connection connection))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (insert "change course")
+            (jcode-steer)
+            (should (equal (buffer-string) "")))
+          (should (equal steered (list connection "change course"))))
       (kill-buffer chat)
       (kill-buffer input))))
 
