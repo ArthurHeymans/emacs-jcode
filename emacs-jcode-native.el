@@ -26,6 +26,17 @@ updating without taking over another UI client."
   :type 'number
   :group 'emacs-jcode)
 
+(defcustom emacs-jcode-native-take-over-active-session t
+  "Whether native resume should take over the target live session.
+
+When non-nil, Emacs asks the daemon to make this connection the live client for
+the selected session.  That is required for token-by-token streaming on normal
+sessions because the daemon only sends in-progress deltas to the owning client.
+When nil, Emacs remains a passive viewer and relies on polling committed
+history."
+  :type 'boolean
+  :group 'emacs-jcode)
+
 (defun emacs-jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
   (let ((file (emacs-jcode--servers-file directory)))
@@ -187,8 +198,8 @@ updating without taking over another UI client."
      connection "subscribe"
      :working_dir cwd
      :target_session_id session-id
-     :client_has_local_history :false
-     :allow_session_takeover :false)
+     :client_has_local_history (if emacs-jcode-native-take-over-active-session t :false)
+     :allow_session_takeover (if emacs-jcode-native-take-over-active-session t :false))
     (setf (emacs-jcode-native-connection-poll-timer connection)
           (run-with-timer emacs-jcode-native-poll-interval
                           emacs-jcode-native-poll-interval
