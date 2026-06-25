@@ -71,9 +71,7 @@ With prefix argument, prompt for SESSION-ID and load that session."
    (list (when current-prefix-arg
            (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
   (if-let ((pair (and (not session-id)
-                     (or (jcode--current-buffer-pair)
-                         (when-let ((chat (car (jcode-project-buffers))))
-                           (cons chat (buffer-local-value 'jcode--input-buffer chat)))))))
+                     (jcode--current-buffer-pair))))
       (jcode--show-session-buffers (car pair) (cdr pair))
     (let* ((dir (jcode--project-directory))
          (buffers (jcode--make-buffers dir session-id))

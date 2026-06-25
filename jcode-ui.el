@@ -172,20 +172,104 @@
     (cons chat input)))
 
 (defun jcode--display-buffers (chat input)
-  "Display CHAT above INPUT and focus INPUT.
-If both buffers are already visible in the selected frame, preserve the layout
-and only focus INPUT, matching `pi-coding-agent' behavior."
-  (let ((chat-window (get-buffer-window chat nil))
-        (input-window (get-buffer-window input nil)))
-    (if (and (window-live-p chat-window) (window-live-p input-window))
-        (select-window input-window)
-      (let ((chat-window (or chat-window
-                             (display-buffer chat '(display-buffer-pop-up-window)))))
-        (select-window chat-window)
-        (let ((input-window (or input-window
-                                (split-window chat-window (- jcode-input-window-height) 'below))))
-          (set-window-buffer input-window input)
-          (select-window input-window))))))
+  "Ensure CHAT and INPUT are visible, matching pi-style window behavior."
+  (let* ((chat-windows (get-buffer-window-list chat nil))
+         (input-windows (get-buffer-window-list input nil)))
+    (if (and chat-windows input-windows)
+        (jcode--focus-input-window chat input)
+      (jcode--display-buffer-pair chat input chat-windows input-windows))))
+
+(defun jcode--window-can-split-for-input-p (window)
+  "Return non-nil if WINDOW can be split into chat and input panes."
+  (>= (window-total-height window) (* 2 window-min-height)))
+
+(defun jcode--input-height-for-window (window)
+  "Return the input pane height for WINDOW."
+  (let* ((total (window-total-height window))
+         (max-input-height (- total window-min-height))
+         (raw (if (floatp jcode-input-window-height)
+                  (round (* jcode-input-window-height total))
+                jcode-input-window-height)))
+    (max window-min-height (min raw max-input-height))))
+
+(defun jcode--windows-by-height (&optional windows)
+  "Return live WINDOWS sorted by descending height."
+  (sort (cl-remove-if-not #'window-live-p
+                          (copy-sequence (or windows (window-list nil 'no-mini))))
+        (lambda (a b) (> (window-total-height a) (window-total-height b)))))
+
+(defun jcode--window-with-most-height (&optional windows)
+  "Return the tallest window from WINDOWS."
+  (car (jcode--windows-by-height windows)))
+
+(defun jcode--best-display-window (&optional preferred)
+  "Return the best window for displaying chat plus input."
+  (or (and preferred
+           (window-live-p preferred)
+           (jcode--window-can-split-for-input-p preferred)
+           preferred)
+      (cl-find-if #'jcode--window-can-split-for-input-p
+                  (jcode--windows-by-height))
+      preferred
+      (selected-window)))
+
+(defun jcode--preferred-display-window (chat-windows input-windows selected)
+  "Return preferred base window for displaying a jcode pair."
+  (cond
+   ((and input-windows (not chat-windows)
+         (not (memq selected input-windows))
+         (jcode--window-can-split-for-input-p selected))
+    selected)
+   (chat-windows (jcode--window-with-most-height chat-windows))
+   (input-windows (jcode--window-with-most-height input-windows))
+   (t selected)))
+
+(defun jcode--delete-extra-input-windows (input-windows target)
+  "Delete INPUT-WINDOWS except TARGET."
+  (dolist (window input-windows)
+    (unless (eq window target)
+      (ignore-errors (delete-window window)))))
+
+(defun jcode--paired-input-window (chat-window input)
+  "Return input window below CHAT-WINDOW showing INPUT, or nil."
+  (when (window-live-p chat-window)
+    (let ((below (window-in-direction 'below chat-window)))
+      (and below (eq (window-buffer below) input) below))))
+
+(defun jcode--best-input-window (chat input)
+  "Return best visible input window for CHAT/INPUT in the selected frame."
+  (let* ((input-windows (get-buffer-window-list input nil))
+         (selected (selected-window))
+         (selected-chat-window (and (eq (window-buffer selected) chat) selected)))
+    (or (jcode--paired-input-window selected-chat-window input)
+        (and (memq selected input-windows) selected)
+        (jcode--window-with-most-height input-windows))))
+
+(defun jcode--focus-input-window (chat input)
+  "Focus a visible INPUT window for CHAT."
+  (when-let* ((window (jcode--best-input-window chat input)))
+    (select-window window)))
+
+(defun jcode--display-buffer-pair (chat input chat-windows input-windows)
+  "Display CHAT over INPUT using pi-style window selection."
+  (let* ((selected (selected-window))
+         (preferred (jcode--preferred-display-window chat-windows input-windows selected))
+         (target (jcode--best-display-window preferred))
+         input-window)
+    (when (and input-windows (not chat-windows))
+      (jcode--delete-extra-input-windows input-windows target))
+    (with-selected-window target
+      (unless (jcode--window-can-split-for-input-p target)
+        (delete-other-windows target))
+      (unless (jcode--window-can-split-for-input-p target)
+        (user-error "Window too small for chat + input layout"))
+      (switch-to-buffer chat)
+      (with-current-buffer chat (goto-char (point-max)))
+      (setq input-window (split-window nil (- (jcode--input-height-for-window target)) 'below))
+      (set-window-buffer input-window input)
+      (set-window-dedicated-p input-window 'side))
+    (when (window-live-p input-window)
+      (select-window input-window))))
 
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."
