@@ -147,6 +147,36 @@
     (should (equal (emacs-jcode--session-display-title active) "server alpha"))
     (should (equal (emacs-jcode--session-display-title closed) "beta"))))
 
+(ert-deftest emacs-jcode-native-json-read-parses-history ()
+  (let ((event (emacs-jcode-native--json-read
+                "{\"type\":\"history\",\"provider_model\":\"gpt\",\"messages\":[{\"role\":\"assistant\",\"content\":\"hello\"}]}")))
+    (should (equal (alist-get 'type event) "history"))
+    (should (equal (alist-get 'provider_model event) "gpt"))
+    (should (equal (alist-get 'content (aref (alist-get 'messages event) 0)) "hello"))))
+
+(ert-deftest emacs-jcode-native-history-renders-messages-and-metadata ()
+  (let* ((chat (generate-new-buffer " *jcode-test-native-chat*"))
+         (input (generate-new-buffer " *jcode-test-native-input*"))
+         (connection (emacs-jcode--make-native-connection
+                      :chat chat :input input :session-id "s-native" :cwd "/tmp")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (emacs-jcode-chat-mode))
+          (with-current-buffer input (emacs-jcode-input-mode))
+          (emacs-jcode-native--render-history
+           connection
+           '((type . "history")
+             (server_name . "garden")
+             (provider_model . "gpt-test")
+             (messages . [((role . "user") (content . "hi"))
+                          ((role . "assistant") (content . "hello"))])))
+          (with-current-buffer chat
+            (should (string-match-p "hi" (buffer-string)))
+            (should (string-match-p "hello" (buffer-string)))
+            (should (equal emacs-jcode--display-model "gpt-test"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest emacs-jcode-killing-chat-kills-input ()
   (let* ((dir default-directory)
          (buffers (emacs-jcode--make-buffers dir "linked-test"))

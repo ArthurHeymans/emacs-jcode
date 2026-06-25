@@ -20,12 +20,15 @@
 
 (require 'emacs-jcode-ui)
 (require 'emacs-jcode-session)
+(require 'emacs-jcode-native)
 (require 'emacs-jcode-acp)
 (require 'emacs-jcode-input)
 
 (declare-function emacs-jcode-apply-session-info-to-buffers "emacs-jcode-session"
                   (session-id chat input))
 (declare-function emacs-jcode-session-teardown "emacs-jcode-acp" (session))
+(declare-function emacs-jcode-native-open-session "emacs-jcode-native"
+                  (session-id cwd chat input))
 
 ;;;###autoload
 (defun emacs-jcode (&optional session-id)
@@ -61,8 +64,8 @@ With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
       (with-current-buffer chat (setq emacs-jcode--session nil))
       (with-current-buffer input (setq emacs-jcode--session nil))
       (emacs-jcode--clear-chat-buffer chat))
-    (unless (buffer-local-value 'emacs-jcode--session chat)
-      (emacs-jcode-session-start dir chat input session-id (not full-load)))
+    (unless (buffer-local-value 'emacs-jcode--native-connection chat)
+      (emacs-jcode-native-open-session session-id dir chat input))
     chat))
 
 ;;;###autoload
