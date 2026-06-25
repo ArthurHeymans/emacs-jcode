@@ -147,6 +147,17 @@
     (should (equal (emacs-jcode--session-display-title active) "server alpha"))
     (should (equal (emacs-jcode--session-display-title closed) "beta"))))
 
+(ert-deftest emacs-jcode-session-status-string-handles-structured-status ()
+  (should (equal (emacs-jcode--session-status-string
+                  '((Crashed (message . "Terminal or window closed (SIGHUP)"))))
+                 "Crashed: Terminal or window closed (SIGHUP)"))
+  (let ((info (emacs-jcode--make-session-info
+               :id "s-crash"
+               :short-name "broken"
+               :status '((Crashed (message . "Terminal or window closed (SIGHUP)"))))))
+    (should (equal (aref (cadr (emacs-jcode--session-list-entry info)) 1)
+                   "Crashed: Terminal or window closed (SIGHUP)"))))
+
 (ert-deftest emacs-jcode-native-json-read-parses-history ()
   (let ((event (emacs-jcode-native--json-read
                 "{\"type\":\"history\",\"provider_model\":\"gpt\",\"messages\":[{\"role\":\"assistant\",\"content\":\"hello\"}]}")))

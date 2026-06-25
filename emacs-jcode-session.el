@@ -94,6 +94,25 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
              :last-pid (emacs-jcode--safe-alist-get 'last_pid data)))))
     (error nil)))
 
+(defun emacs-jcode--session-status-string (status)
+  "Return a human-readable string for jcode session STATUS."
+  (cond
+   ((null status) "")
+   ((stringp status) status)
+   ((symbolp status) (symbol-name status))
+   ;; Ex: ((Crashed (message . "Terminal or window closed (SIGHUP)")))
+   ((and (consp status) (consp (car status)) (symbolp (caar status)))
+    (let* ((kind (symbol-name (caar status)))
+           (payload (cdar status))
+           (message (and (listp payload)
+                         (or (alist-get 'message payload)
+                             (alist-get "message" payload nil nil #'equal)))))
+      (if (and (stringp message) (not (string-empty-p message)))
+          (format "%s: %s" kind message)
+        kind)))
+   ((consp status) (string-join (mapcar #'emacs-jcode--session-status-string status) " "))
+   (t (format "%s" status))))
+
 (defun emacs-jcode--annotate-session-server-names (sessions directory)
   "Annotate SESSIONS with server names from DIRECTORY's server registry."
   (let ((servers (emacs-jcode--server-name-by-pid directory)))
@@ -118,7 +137,9 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
 (defun emacs-jcode--session-display-title (info)
   "Return display title for session INFO."
   (or (emacs-jcode-session-info-title info)
-      (when (and (string= (or (emacs-jcode-session-info-status info) "") "Active")
+      (when (and (string= (emacs-jcode--session-status-string
+                           (emacs-jcode-session-info-status info))
+                          "Active")
                  (emacs-jcode-session-info-server-name info)
                  (emacs-jcode-session-info-short-name info))
         (format "%s %s"
@@ -132,7 +153,8 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   (let ((id (emacs-jcode-session-info-id info)))
     (cons (format "%s  %s  %s  %s"
                   (emacs-jcode--session-display-title info)
-                  (or (emacs-jcode-session-info-status info) "")
+                  (emacs-jcode--session-status-string
+                   (emacs-jcode-session-info-status info))
                   (or (emacs-jcode-session-info-updated-at info) "")
                   (or (emacs-jcode-session-info-working-dir info) ""))
           id)))
@@ -161,7 +183,8 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
   (let ((id (emacs-jcode-session-info-id info)))
     (list id
           (vector (emacs-jcode--session-display-title info)
-                  (or (emacs-jcode-session-info-status info) "")
+                  (emacs-jcode--session-status-string
+                   (emacs-jcode-session-info-status info))
                   (or (emacs-jcode-session-info-model info) "")
                   (or (emacs-jcode-session-info-updated-at info) "")
                   (or (emacs-jcode-session-info-working-dir info) "")
@@ -175,7 +198,8 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
        buffer
        :session-id (emacs-jcode-session-info-id info)
        :title title
-       :status (emacs-jcode-session-info-status info)
+       :status (emacs-jcode--session-status-string
+                (emacs-jcode-session-info-status info))
        :model (emacs-jcode-session-info-model info)))))
 
 (defun emacs-jcode-list-refresh ()
