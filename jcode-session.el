@@ -587,6 +587,8 @@ With prefix argument RESUME-ONLY, attach without replay."
   (setq tabulated-list-format jcode--session-list-format)
   (setq tabulated-list-sort-key nil)
   (setq tabulated-list-padding 2)
+  (setq-local header-line-format
+              "RET open  r resume  R rename  m mark  x delete marked  g refresh  q quit")
   (tabulated-list-init-header))
 
 (provide 'jcode-session)

@@ -1200,7 +1200,8 @@
     (should (eq (key-binding (kbd "U")) #'jcode-list-unmark-all))
     (should (eq (key-binding (kbd "t")) #'jcode-list-toggle-mark))
     (should (eq (key-binding (kbd "x")) #'jcode-list-delete-marked-sessions))
-    (should (eq (key-binding (kbd "D")) #'jcode-list-delete-marked-sessions))))
+    (should (eq (key-binding (kbd "D")) #'jcode-list-delete-marked-sessions))
+    (should (eq (key-binding (kbd "R")) #'jcode-list-rename-session))))
 
 (ert-deftest jcode-send-uses-native-connection-when-present ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-send-chat*"))

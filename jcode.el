@@ -237,7 +237,8 @@ With prefix argument ANY-DIRECTORY, resume the globally latest known session."
 
 ;;;###autoload
 (defun jcode-list ()
-  "List known jcode sessions.  RET loads with replay, `r' resumes without replay."
+  "List known jcode sessions.
+RET loads with replay, `r' resumes without replay, `R' renames at point."
   (interactive)
   (let ((buffer (get-buffer-create "*jcode-sessions*"))
         (dir (jcode--project-directory)))
