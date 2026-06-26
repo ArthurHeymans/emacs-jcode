@@ -516,40 +516,58 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 (defun jcode--insert-tool-toggle-button (label overlay)
   "Insert a clickable LABEL linked to tool block OVERLAY."
   (let ((id (overlay-get overlay 'jcode-tool-block-id)))
-  (insert-text-button label
-                      'face 'jcode-collapsed-face
-                      'follow-link t
-                      'help-echo "mouse-1 or TAB: toggle tool output"
-                      'keymap nil
-                      'jcode-tool-block-id id
-                      'action (lambda (button)
-                                (when-let* ((id (button-get button 'jcode-tool-block-id))
-                                            (ov (jcode--tool-block-overlay-by-id id)))
-                                  (jcode--toggle-tool-overlay ov))))))
+    (insert-text-button label
+                        'face 'jcode-collapsed-face
+                        'follow-link t
+                        'help-echo "mouse-1 or TAB: toggle tool output"
+                        'keymap nil
+                        'jcode-tool-block-id id
+                        'action (lambda (button)
+                                  (when-let* ((id (button-get button 'jcode-tool-block-id))
+                                              (ov (jcode--tool-block-overlay-by-id id)))
+                                    (jcode--toggle-tool-overlay ov))))))
+
+(defun jcode--insert-tool-header (overlay)
+  "Insert the summary row for tool block OVERLAY."
+  (let ((collapsed (overlay-get overlay 'jcode-collapsed))
+        (text (or (overlay-get overlay 'jcode-full-text) ""))
+        (icon-face (overlay-get overlay 'jcode-icon-face))
+        (badge (overlay-get overlay 'jcode-token-badge))
+        (display-name (overlay-get overlay 'jcode-display-name))
+        (summary (overlay-get overlay 'jcode-summary)))
+    (insert "  "
+            (propertize (car icon-face) 'font-lock-face (cdr icon-face))
+            " "
+            (propertize display-name 'font-lock-face 'jcode-tool-face))
+    (when (and summary (not (string-empty-p summary)))
+      (insert (propertize " " 'font-lock-face 'jcode-dim-face)
+              (propertize summary 'font-lock-face 'jcode-dim-face)))
+    (when (jcode--tool-lines text)
+      (insert (propertize " · " 'font-lock-face 'jcode-dim-face)
+              (propertize (car badge) 'font-lock-face (cdr badge))
+              (propertize " · " 'font-lock-face 'jcode-dim-face))
+      (jcode--insert-tool-toggle-button
+       (if collapsed "▸ expand output" "▾ collapse output") overlay))
+    (insert "\n")))
 
 (defun jcode--render-tool-body (overlay)
   "Rewrite OVERLAY body according to its collapsed state."
-  (let* ((header-end (overlay-get overlay 'jcode-header-end))
+  (let* ((start (copy-marker (overlay-start overlay)))
          (text (or (overlay-get overlay 'jcode-full-text) ""))
          (collapsed (overlay-get overlay 'jcode-collapsed))
          (preview (jcode--tool-preview text jcode-tool-show-preview-lines))
          (display-text (if collapsed (car preview) text))
-         (hidden (cdr preview))
          (kind (overlay-get overlay 'jcode-body-kind))
          (inhibit-read-only t)
          (buffer-read-only nil))
     (save-excursion
-      (goto-char header-end)
-      (delete-region header-end (overlay-end overlay))
+      (goto-char start)
+      (delete-region (overlay-start overlay) (overlay-end overlay))
+      (jcode--insert-tool-header overlay)
       (unless (or (not display-text) (string-empty-p display-text))
         (insert (jcode--tool-block-body-for-kind display-text kind)))
-      (when (or (> hidden 0) (and collapsed (jcode--tool-lines text)))
-        (jcode--insert-tool-toggle-button
-         (if collapsed
-             "    ▸ expand output\n"
-           "▾ collapse tool output\n")
-         overlay))
-      (move-overlay overlay (overlay-start overlay) (point)))))
+      (move-overlay overlay start (point)))
+    (set-marker start nil)))
 
 (defun jcode--toggle-tool-overlay (overlay)
   "Toggle collapsed state for tool block OVERLAY."
@@ -572,39 +590,30 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
       (let ((inhibit-read-only t)
             (move (= (point) (point-max))))
         (goto-char (point-max))
-        (unless (bolp) (insert "\n"))
-        (insert "\n")
-        (let ((start (point)))
-          (let* ((icon-face (jcode--tool-status-icon-face status text))
-                 (badge (jcode--tool-output-token-badge (or raw-output text)))
-                 (display-name (jcode--tool-display-name name))
-                 (summary (jcode--tool-summary name status text input intent)))
-            (insert "  "
-                    (propertize (car icon-face) 'font-lock-face (cdr icon-face))
-                    " "
-                    (propertize display-name 'font-lock-face 'jcode-tool-face))
-            (when (and summary (not (string-empty-p summary)))
-              (insert (propertize " " 'font-lock-face 'jcode-dim-face)
-                      (propertize summary 'font-lock-face 'jcode-dim-face)))
-            (when (jcode--tool-lines text)
-              (insert (propertize " · " 'font-lock-face 'jcode-dim-face)
-                      (propertize (car badge) 'font-lock-face (cdr badge))))
-            (insert "\n"))
-          (let* ((header-end (point-marker))
-                 (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
-                 (collapsed (and (jcode--tool-lines text) t))
-                 (overlay (make-overlay start (point) nil nil nil))
-                 (id (cl-incf jcode--tool-block-counter)))
-            (overlay-put overlay 'jcode-tool-block t)
-            (overlay-put overlay 'jcode-tool-block-id id)
-            (overlay-put overlay 'jcode-header-end header-end)
-            (overlay-put overlay 'jcode-full-text (or text ""))
-            (overlay-put overlay 'jcode-body-kind (jcode--tool-body-kind name text))
-            (overlay-put overlay 'jcode-collapsed collapsed)
-            ;; Background only, so markdown/code syntax foregrounds survive.
-            (overlay-put overlay 'face 'jcode-tool-block-face)
-            (jcode--render-tool-body overlay)))
-        (when move (goto-char (point-max)))))))
+	(unless (bolp) (insert "\n"))
+	(insert "\n")
+	(let* ((start (point))
+	       (icon-face (jcode--tool-status-icon-face status text))
+	       (badge (jcode--tool-output-token-badge (or raw-output text)))
+	       (display-name (jcode--tool-display-name name))
+	       (summary (jcode--tool-summary name status text input intent))
+	       (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
+	       (collapsed (and (jcode--tool-lines text) t))
+	       (overlay (make-overlay start start nil nil nil))
+	       (id (cl-incf jcode--tool-block-counter)))
+	    (overlay-put overlay 'jcode-tool-block t)
+	    (overlay-put overlay 'jcode-tool-block-id id)
+	    (overlay-put overlay 'jcode-icon-face icon-face)
+	    (overlay-put overlay 'jcode-token-badge badge)
+	    (overlay-put overlay 'jcode-display-name display-name)
+	    (overlay-put overlay 'jcode-summary summary)
+	    (overlay-put overlay 'jcode-full-text (or text ""))
+	    (overlay-put overlay 'jcode-body-kind (jcode--tool-body-kind name text))
+	    (overlay-put overlay 'jcode-collapsed collapsed)
+	    ;; Background only, so markdown/code syntax foregrounds survive.
+	    (overlay-put overlay 'face 'jcode-tool-block-face)
+	    (jcode--render-tool-body overlay))
+	(when move (goto-char (point-max)))))))
 
 (defun jcode-render-info (chat text)
   "Render informational TEXT in CHAT."
