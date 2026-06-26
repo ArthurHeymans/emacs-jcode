@@ -434,17 +434,17 @@
   (should (eq (lookup-key jcode--header-fast-map [header-line mouse-1])
               #'jcode-select-fast-mode)))
 
-(ert-deftest jcode-header-hides-context-when-max-unknown ()
+(ert-deftest jcode-header-shows-current-context-when-max-unknown ()
   (with-temp-buffer
     (jcode-input-mode)
     (jcode--set-display-metadata
      (current-buffer)
      :token-usage-totals '((input_tokens . 1200) (output_tokens . 300)))
     (let ((header (jcode--header-line)))
-      (should-not (string-match-p "ctx" header))
+      (should (string-match-p "ctx 1\\.2k" header))
       (should (string-match-p "total in 1\\.2k out 300" header)))))
 
-(ert-deftest jcode-header-requires-protocol-context-window ()
+(ert-deftest jcode-header-shows-current-context-without-guessing-max ()
   (with-temp-buffer
     (jcode-input-mode)
     (jcode--set-display-metadata
@@ -452,10 +452,11 @@
      :provider "OpenAI"
      :model "gpt-5.5"
      :token-usage-totals '((input_tokens . 718900)
-                           (output_tokens . 5100)
-                           (cache_read_input_tokens . 612100)))
+	                           (output_tokens . 5100)
+	                           (cache_read_input_tokens . 612100)))
     (let ((header (jcode--header-line)))
-      (should-not (string-match-p "ctx" header))
+      (should (string-match-p "ctx 718\\.9k" header))
+      (should-not (string-match-p "ctx 718\\.9k/" header))
       (should (string-match-p "total in 718\\.9k out 5\\.1k cache 612\\.1k" header)))))
 
 (ert-deftest jcode-native-event-context-window-recognizes-aliases ()

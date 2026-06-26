@@ -210,14 +210,17 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 	          input)))))
 
 (defun jcode--header-context ()
-  "Return observed context/max context usage text for the header."
+  "Return observed current context, and max context when known."
   (let ((context (jcode--header-effective-context-tokens))
         (limit jcode--display-context-window))
-    (if (and context (numberp limit))
-		(format " │ ctx %s/%s"
-			(jcode--format-token-count context)
-			(jcode--format-token-count limit))
-      "")))
+    (cond
+     ((and context (numberp limit))
+      (format " │ ctx %s/%s"
+              (jcode--format-token-count context)
+              (jcode--format-token-count limit)))
+     (context
+      (format " │ ctx %s" (jcode--format-token-count context)))
+     (t ""))))
 
 (defun jcode--header-session-usage ()
   "Return explicit session token usage text for the header."
