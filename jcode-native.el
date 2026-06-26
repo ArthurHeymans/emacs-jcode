@@ -13,7 +13,7 @@
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
   process chat input session-id cwd next-id line-buffer poll-timer last-history-size
-  busy followup-queue takeover compacted-total compacted-visible compacted-remaining)
+  busy followup-queue takeover)
 
 (defcustom jcode-compacted-history-load-count 64
   "Number of compacted messages to add when loading older history."
@@ -47,6 +47,49 @@ sessions because the daemon only sends in-progress deltas to the owning client.
 When nil, Emacs remains a passive viewer and relies on polling committed
 history."
   :type 'boolean
+  :group 'jcode)
+
+(defcustom jcode-default-model nil
+  "Model to select automatically for newly connected native sessions.
+Nil leaves the daemon/session default unchanged."
+  :type '(choice (const :tag "Daemon default" nil) string)
+  :group 'jcode)
+
+(defcustom jcode-default-reasoning-effort nil
+  "Reasoning effort to apply automatically to newly connected native sessions."
+  :type '(choice (const :tag "Daemon default" nil)
+                 (const "none") (const "low") (const "medium") (const "high") (const "xhigh"))
+  :group 'jcode)
+
+(defcustom jcode-default-service-tier nil
+  "Service tier to apply automatically to newly connected native sessions."
+  :type '(choice (const :tag "Daemon default" nil)
+                 (const "off") (const "flex") (const "priority") (const "fast"))
+  :group 'jcode)
+
+(defcustom jcode-default-transport nil
+  "Transport to apply automatically to newly connected native sessions."
+  :type '(choice (const :tag "Daemon default" nil)
+                 (const "auto") (const "https") (const "websocket"))
+  :group 'jcode)
+
+(defcustom jcode-default-premium-mode nil
+  "Copilot premium conservation mode for newly connected native sessions."
+  :type '(choice (const :tag "Daemon default" nil)
+                 (const "normal") (const "one") (const "zero"))
+  :group 'jcode)
+
+(defcustom jcode-default-compaction-mode nil
+  "Compaction mode to apply automatically to newly connected native sessions."
+  :type '(choice (const :tag "Daemon default" nil)
+                 (const "reactive") (const "proactive") (const "semantic"))
+  :group 'jcode)
+
+(defcustom jcode-default-feature-states nil
+  "Feature states to apply automatically to newly connected native sessions.
+Each entry is (FEATURE . STATE), where FEATURE is a string like memory or swarm
+and STATE is \"on\" or \"off\"."
+  :type '(alist :key-type string :value-type (choice (const "on") (const "off")))
   :group 'jcode)
 
 (defun jcode-native-socket-path (&optional directory)
@@ -132,8 +175,12 @@ history."
   (interactive "P")
   (let* ((connection (or (jcode--native-connection-for-command)
                          (user-error "No native jcode connection")))
-         (visible (or (jcode-native-connection-compacted-visible connection) 0))
-         (remaining (jcode-native-connection-compacted-remaining connection))
+         (chat (jcode-native-connection-chat connection))
+         (visible (if (buffer-live-p chat)
+                      (with-current-buffer chat (or jcode--compacted-visible 0))
+                    0))
+         (remaining (and (buffer-live-p chat)
+                         (with-current-buffer chat jcode--compacted-remaining)))
          (increment (prefix-numeric-value (or count jcode-compacted-history-load-count)))
          (target (+ visible (max 1 increment))))
     (when (and remaining (<= remaining 0))
@@ -144,6 +191,33 @@ history."
 (defun jcode-native-set-model (connection model)
   "Set CONNECTION's active MODEL."
   (jcode-native--request connection "set_model" :model model))
+
+(defun jcode-native--premium-mode-value (mode)
+  "Return native premium integer for MODE string."
+  (cdr (assoc mode '(("normal" . 0) ("one" . 1) ("zero" . 2)))))
+
+(defun jcode-native-apply-defaults (connection)
+  "Apply Emacs-side defaults to newly connected native CONNECTION."
+  (when jcode-default-model
+    (jcode-native--request connection "set_model" :model jcode-default-model))
+  (when jcode-default-reasoning-effort
+    (jcode-native--request connection "set_reasoning_effort" :effort jcode-default-reasoning-effort))
+  (when jcode-default-service-tier
+    (jcode-native--request connection "set_service_tier" :service_tier jcode-default-service-tier))
+  (when jcode-default-transport
+    (jcode-native--request connection "set_transport" :transport jcode-default-transport))
+  (when jcode-default-premium-mode
+    (when-let ((value (jcode-native--premium-mode-value jcode-default-premium-mode)))
+      (jcode-native--request connection "set_premium_mode" :mode value)))
+  (when jcode-default-compaction-mode
+    (jcode-native--request connection "set_compaction_mode" :mode jcode-default-compaction-mode))
+  (dolist (entry jcode-default-feature-states)
+    (let ((feature (car entry))
+          (state (cdr entry)))
+      (when (member state '("on" "off"))
+        (jcode-native--request connection "set_feature"
+                               :feature feature
+                               :enabled (if (equal state "on") t :false))))))
 
 (defun jcode-native-set-reasoning-effort (connection effort)
   "Set CONNECTION's reasoning EFFORT."
@@ -299,9 +373,6 @@ history."
   (let ((total (alist-get 'compacted_total event))
         (visible (alist-get 'compacted_visible event))
         (remaining (alist-get 'compacted_remaining event)))
-    (when total (setf (jcode-native-connection-compacted-total connection) total))
-    (when visible (setf (jcode-native-connection-compacted-visible connection) visible))
-    (when remaining (setf (jcode-native-connection-compacted-remaining connection) remaining))
     (dolist (buffer (list (jcode-native-connection-chat connection)
                           (jcode-native-connection-input connection)))
       (when (buffer-live-p buffer)
@@ -529,6 +600,7 @@ history."
     (dolist (buffer (list chat input))
       (jcode--set-display-metadata
        buffer :owner (if jcode-native-take-over-active-session 'owned 'viewing)))
+    (jcode-native-apply-defaults connection)
     connection))
 
 (provide 'jcode-native)

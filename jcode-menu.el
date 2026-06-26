@@ -72,13 +72,23 @@ and set_compaction_mode.")
   (let ((chat (ignore-errors (jcode--menu-chat))))
     (if (buffer-live-p chat)
         (with-current-buffer chat
-          (or (and (boundp variable) (symbol-value variable)) fallback "?"))
-      (or fallback "?"))))
+          (or (and (boundp variable) (symbol-value variable)) fallback "default"))
+      (or fallback "default"))))
 
 (defun jcode--menu-feature-value (feature)
   "Return current menu display value for FEATURE."
   (let ((states (jcode--menu-state-value 'jcode--display-feature-states nil)))
-    (or (and (listp states) (cdr (assoc feature states))) "?")))
+    (or (and (listp states) (cdr (assoc feature states))) "default")))
+
+(defun jcode--menu-default-value (variable)
+  "Return default-setting VARIABLE display value."
+  (let ((value (and (boundp variable) (symbol-value variable))))
+    (cond
+     ((null value) "daemon")
+     ((and (listp value) (null value)) "daemon")
+     ((listp value)
+      (string-join (mapcar (lambda (entry) (format "%s=%s" (car entry) (cdr entry))) value) ","))
+     (t (format "%s" value)))))
 
 (defun jcode--menu-setting-description (label variable &optional fallback)
   "Return transient description for LABEL from chat-local VARIABLE."
@@ -123,6 +133,34 @@ and set_compaction_mode.")
 (defun jcode--menu-desc-judge ()
   "Return autojudge transient description."
   (jcode--menu-feature-description "judge" "autojudge"))
+
+(defun jcode--menu-desc-default-model ()
+  "Return default model transient description."
+  (format "default model: %s" (jcode--menu-default-value 'jcode-default-model)))
+
+(defun jcode--menu-desc-default-effort ()
+  "Return default effort transient description."
+  (format "default effort: %s" (jcode--menu-default-value 'jcode-default-reasoning-effort)))
+
+(defun jcode--menu-desc-default-fast ()
+  "Return default fast/service tier transient description."
+  (format "default fast: %s" (jcode--menu-default-value 'jcode-default-service-tier)))
+
+(defun jcode--menu-desc-default-transport ()
+  "Return default transport transient description."
+  (format "default transport: %s" (jcode--menu-default-value 'jcode-default-transport)))
+
+(defun jcode--menu-desc-default-premium ()
+  "Return default premium transient description."
+  (format "default premium: %s" (jcode--menu-default-value 'jcode-default-premium-mode)))
+
+(defun jcode--menu-desc-default-compaction ()
+  "Return default compaction transient description."
+  (format "default compaction: %s" (jcode--menu-default-value 'jcode-default-compaction-mode)))
+
+(defun jcode--menu-desc-default-features ()
+  "Return default feature transient description."
+  (format "default features: %s" (jcode--menu-default-value 'jcode-default-feature-states)))
 
 (defun jcode--menu-chat ()
   "Return the current jcode chat buffer."
@@ -257,6 +295,75 @@ An empty TITLE clears the custom title."
   (let ((choice (or state (completing-read "State: " '("on" "off") nil t))))
     (jcode-set-feature feature (string= choice "on"))))
 
+(defun jcode--read-default-choice (prompt choices)
+  "Read PROMPT from daemon/default plus CHOICES, returning nil for daemon."
+  (let ((choice (completing-read prompt (cons "daemon" choices) nil t nil nil "daemon")))
+    (unless (equal choice "daemon") choice)))
+
+(defun jcode-set-default-model (&optional model)
+  "Set Emacs default MODEL for future native sessions."
+  (interactive
+   (let* ((chat (ignore-errors (jcode--menu-chat)))
+          (models (and (buffer-live-p chat)
+                       (buffer-local-value 'jcode--available-models chat)))
+          (choices (append '("daemon") models nil))
+          (current (or jcode-default-model "daemon"))
+          (choice (if models
+                      (completing-read (format "Default model (current: %s): " current)
+                                       choices nil t nil nil current)
+                    (read-string "Default model (empty = daemon): " nil nil jcode-default-model))))
+     (list choice)))
+  (setq jcode-default-model
+        (unless (or (string-empty-p (or model "")) (equal model "daemon")) model))
+  (message "Jcode: default model %s" (or jcode-default-model "daemon")))
+
+(defun jcode-set-default-reasoning-effort (&optional effort)
+  "Set Emacs default reasoning EFFORT for future native sessions."
+  (interactive)
+  (setq jcode-default-reasoning-effort
+        (or effort (jcode--read-default-choice "Default effort: " jcode-native-reasoning-efforts)))
+  (message "Jcode: default effort %s" (or jcode-default-reasoning-effort "daemon")))
+
+(defun jcode-set-default-fast-mode (&optional tier)
+  "Set Emacs default service TIER for future native sessions."
+  (interactive)
+  (setq jcode-default-service-tier
+        (or tier (jcode--read-default-choice "Default fast/service tier: " '("off" "flex" "priority" "fast"))))
+  (message "Jcode: default fast %s" (or jcode-default-service-tier "daemon")))
+
+(defun jcode-set-default-transport (&optional transport)
+  "Set Emacs default TRANSPORT for future native sessions."
+  (interactive)
+  (setq jcode-default-transport
+        (or transport (jcode--read-default-choice "Default transport: " jcode-transport-modes)))
+  (message "Jcode: default transport %s" (or jcode-default-transport "daemon")))
+
+(defun jcode-set-default-premium-mode (&optional mode)
+  "Set Emacs default premium MODE for future native sessions."
+  (interactive)
+  (setq jcode-default-premium-mode
+        (or mode (jcode--read-default-choice "Default premium mode: " (mapcar #'car jcode-premium-modes))))
+  (message "Jcode: default premium %s" (or jcode-default-premium-mode "daemon")))
+
+(defun jcode-set-default-compaction-mode (&optional mode)
+  "Set Emacs default compaction MODE for future native sessions."
+  (interactive)
+  (setq jcode-default-compaction-mode
+        (or mode (jcode--read-default-choice "Default compaction mode: " jcode-compaction-modes)))
+  (message "Jcode: default compaction %s" (or jcode-default-compaction-mode "daemon")))
+
+(defun jcode-set-default-feature-state (&optional feature state)
+  "Set Emacs default FEATURE STATE for future native sessions."
+  (interactive
+   (list (completing-read "Default feature: " jcode-feature-toggles nil t)
+         (jcode--read-default-choice "Default state: " '("on" "off"))))
+  (let ((states (copy-alist jcode-default-feature-states)))
+    (if state
+        (setf (alist-get feature states nil nil #'equal) state)
+      (setq states (assoc-delete-all feature states)))
+    (setq jcode-default-feature-states states)
+    (message "Jcode: default %s %s" feature (or state "daemon"))))
+
 (defun jcode-enable-feature (feature)
   "Enable native jcode runtime FEATURE."
   (interactive (list (completing-read "Enable feature: " jcode-feature-toggles nil t)))
@@ -381,11 +488,20 @@ An empty TITLE clears the custom title."
     ("-w" "swarm" jcode-select-swarm-state
      :description jcode--menu-desc-swarm)
     ("-r" "review" jcode-select-review-state
-     :description jcode--menu-desc-review)
-    ("-j" "judge" jcode-select-judge-state
-     :description jcode--menu-desc-judge)
-    ("-p" "premium" jcode-select-premium-mode
-     :description jcode--menu-desc-premium)]])
+     :description jcode--menu-desc-review)]
+   ["Defaults (future sessions)"
+    ("O" "default model" jcode-set-default-model
+     :description jcode--menu-desc-default-model)
+    ("E" "default effort" jcode-set-default-reasoning-effort
+     :description jcode--menu-desc-default-effort)
+    ("F" "default fast" jcode-set-default-fast-mode
+     :description jcode--menu-desc-default-fast)
+    ("T" "default transport" jcode-set-default-transport
+     :description jcode--menu-desc-default-transport)
+    ("G" "default compaction" jcode-set-default-compaction-mode
+     :description jcode--menu-desc-default-compaction)
+    ("H" "default feature" jcode-set-default-feature-state
+     :description jcode--menu-desc-default-features)]])
 
 (jcode--install-slash-command-capf-in-live-buffers)
 

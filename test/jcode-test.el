@@ -469,10 +469,11 @@
         (progn
           (with-current-buffer chat (jcode-chat-mode))
           (with-current-buffer input (jcode-input-mode) (setq jcode--chat-buffer chat))
-          (let ((connection (jcode--make-native-connection :chat chat :input input
-                                                            :compacted-visible 65
-                                                            :compacted-remaining 128)))
-            (with-current-buffer chat (setq jcode--native-connection connection))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (with-current-buffer chat
+              (setq jcode--native-connection connection
+                    jcode--compacted-visible 65
+                    jcode--compacted-remaining 128))
             (cl-letf (((symbol-function 'jcode-native--request)
                        (lambda (_connection type &rest fields)
                          (setq sent (cons type fields))
@@ -506,8 +507,7 @@
               (should (= jcode--compacted-visible 129))
               (should (= jcode--compacted-remaining 2218)))
             (with-current-buffer input
-              (should (= jcode--compacted-total 2347)))
-            (should (= (jcode-native-connection-compacted-visible connection) 129))))
+              (should (= jcode--compacted-total 2347)))))
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
 
@@ -1066,9 +1066,32 @@
           (with-current-buffer input
             (jcode-input-mode)
             (setq jcode--chat-buffer chat)
-            (should (equal (jcode--menu-desc-memory) "memory: ?"))))
+            (should (equal (jcode--menu-desc-memory) "memory: default"))
+            (should (equal (jcode--menu-desc-transport) "transport: default"))))
       (kill-buffer chat)
       (kill-buffer input))))
+
+(ert-deftest jcode-menu-default-descriptions-and-setters-are-separate ()
+  (let ((jcode-default-model nil)
+        (jcode-default-reasoning-effort nil)
+        (jcode-default-service-tier nil)
+        (jcode-default-transport nil)
+        (jcode-default-premium-mode nil)
+        (jcode-default-compaction-mode nil)
+        (jcode-default-feature-states nil))
+    (should (equal (jcode--menu-desc-default-effort) "default effort: daemon"))
+    (jcode-set-default-reasoning-effort "high")
+    (jcode-set-default-fast-mode "priority")
+    (jcode-set-default-transport "websocket")
+    (jcode-set-default-premium-mode "zero")
+    (jcode-set-default-compaction-mode "semantic")
+    (jcode-set-default-feature-state "memory" "on")
+    (should (equal jcode-default-reasoning-effort "high"))
+    (should (equal (jcode--menu-desc-default-fast) "default fast: priority"))
+    (should (equal (jcode--menu-desc-default-transport) "default transport: websocket"))
+    (should (equal (jcode--menu-desc-default-premium) "default premium: zero"))
+    (should (equal (jcode--menu-desc-default-compaction) "default compaction: semantic"))
+    (should (equal (jcode--menu-desc-default-features) "default features: memory=on"))))
 
 (ert-deftest jcode-send-executes-known-slash-command-locally ()
   (let ((chat (generate-new-buffer " *jcode-test-slash-chat*"))
