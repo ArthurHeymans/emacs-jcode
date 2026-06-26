@@ -101,6 +101,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (define-key map [mode-line mouse-1] #'jcode-select-reasoning-effort)
     map)
   "Keymap for selecting the reasoning effort from the jcode header.")
+(setq jcode--header-reasoning-map
+      (let ((map (make-sparse-keymap)))
+        (define-key map [header-line mouse-1] #'jcode-select-reasoning-effort)
+        (define-key map [mode-line mouse-1] #'jcode-select-reasoning-effort)
+        map))
 
 (defvar jcode--header-fast-map
   (let ((map (make-sparse-keymap)))
@@ -108,6 +113,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (define-key map [mode-line mouse-1] #'jcode-select-fast-mode)
     map)
   "Keymap for selecting fast mode in the jcode header.")
+(setq jcode--header-fast-map
+      (let ((map (make-sparse-keymap)))
+        (define-key map [header-line mouse-1] #'jcode-select-fast-mode)
+        (define-key map [mode-line mouse-1] #'jcode-select-fast-mode)
+        map))
 
 (defun jcode--normalize-directory (dir)
   "Normalize DIR for project/session comparisons."
