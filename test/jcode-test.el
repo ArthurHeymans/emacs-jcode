@@ -772,7 +772,7 @@
          (file (expand-file-name "s1.json" root)))
     (unwind-protect
         (progn
-          (write-region "{\"id\":\"s1\",\"short_name\":\"short\",\"title\":\"Generated\",\"status\":\"Closed\"}\n"
+          (write-region "{\"id\":\"s1\",\"short_name\":\"short\",\"title\":\"Generated\",\"status\":\"Closed\",\"messages\":[{\"id\":\"message_1\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}]}\n"
                         nil file)
           (cl-letf (((symbol-function 'jcode-refresh-session-list-buffers) #'ignore))
             (jcode-rename-session-file "s1" "Custom" root))

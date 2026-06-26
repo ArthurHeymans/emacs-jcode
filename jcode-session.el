@@ -437,7 +437,7 @@ An empty or nil TITLE clears the custom title."
         (setf (alist-get 'custom_title data)
               (unless (string-empty-p (or normalized "")) normalized))
         (erase-buffer)
-        (insert (json-serialize data :false-object :false :null-object nil))
+        (insert (json-encode data))
         (insert "\n")
         (write-region (point-min) (point-max) file nil 'silent)))
     (jcode-refresh-session-list-buffers)
