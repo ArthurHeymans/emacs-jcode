@@ -757,14 +757,32 @@
 
 (ert-deftest jcode-read-session-info-parses-metadata ()
   (let ((file (make-temp-file "jcode-session" nil ".json"
-                              "{\"id\":\"s1\",\"title\":\"Title\",\"short_name\":\"short\",\"working_dir\":\"/tmp/project\",\"status\":\"Active\",\"model\":\"gpt\",\"provider_key\":\"openai\",\"updated_at\":\"2026-01-02T00:00:00Z\"}")))
+                              "{\"id\":\"s1\",\"custom_title\":\"Custom\",\"title\":\"Title\",\"short_name\":\"short\",\"working_dir\":\"/tmp/project\",\"status\":\"Active\",\"model\":\"gpt\",\"provider_key\":\"openai\",\"updated_at\":\"2026-01-02T00:00:00Z\"}")))
     (unwind-protect
         (let ((info (jcode--read-session-info file)))
           (should (equal (jcode-session-info-id info) "s1"))
-          (should (equal (jcode-session-info-title info) "Title"))
+          (should (equal (jcode-session-info-title info) "Custom"))
           (should (equal (jcode-session-info-working-dir info) "/tmp/project"))
           (should (equal (jcode-session-info-model info) "gpt")))
       (delete-file file))))
+
+(ert-deftest jcode-rename-session-file-writes-custom-title ()
+  (let* ((root (make-temp-file "jcode-rename-session" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (file (expand-file-name "s1.json" root)))
+    (unwind-protect
+        (progn
+          (write-region "{\"id\":\"s1\",\"short_name\":\"short\",\"title\":\"Generated\",\"status\":\"Closed\"}\n"
+                        nil file)
+          (cl-letf (((symbol-function 'jcode-refresh-session-list-buffers) #'ignore))
+            (jcode-rename-session-file "s1" "Custom" root))
+          (let ((info (jcode--read-session-info file)))
+            (should (equal (jcode-session-info-title info) "Custom")))
+          (cl-letf (((symbol-function 'jcode-refresh-session-list-buffers) #'ignore))
+            (jcode-rename-session-file "s1" "" root))
+          (let ((info (jcode--read-session-info file)))
+            (should (equal (jcode-session-info-title info) "Generated"))))
+      (delete-directory root t))))
 
 (ert-deftest jcode-read-session-info-parses-large-transcripts ()
   (let* ((large (make-string 150000 ?x))
@@ -1082,8 +1100,8 @@
 	          (with-current-buffer chat
 	            (should (equal jcode--display-transport "websocket"))
 	            (should (equal jcode--display-premium-mode "zero"))
-	            (should (equal jcode--display-title "Renamed Session"))
-	            (should (string-match-p "Renamed Session" (buffer-name)))
+	            (should-not (equal jcode--display-title "Renamed Session"))
+	            (should-not (string-match-p "Renamed Session" (buffer-name)))
 	            (should (equal (cdr (assoc "memory" jcode--display-feature-states)) "on"))
             (should (equal (cdr (assoc "swarm" jcode--display-feature-states)) "off"))))
       (kill-buffer chat)

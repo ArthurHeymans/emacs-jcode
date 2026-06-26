@@ -157,7 +157,8 @@ because they can correspond to currently open Emacs/TUI windows."
           (when id
             (jcode--make-session-info
              :id id
-             :title (jcode--safe-alist-get 'title data)
+             :title (or (jcode--safe-alist-get 'custom_title data)
+                        (jcode--safe-alist-get 'title data))
              :short-name (jcode--safe-alist-get 'short_name data)
              :working-dir (jcode--safe-alist-get 'working_dir data)
              :status (jcode--safe-alist-get 'status data)
@@ -418,6 +419,38 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
            :key #'jcode-session-info-id
            :test #'string=))
 
+(defun jcode-rename-session-file (session-id title &optional directory)
+  "Persist TITLE as custom title for SESSION-ID in DIRECTORY.
+An empty or nil TITLE clears the custom title."
+  (let* ((info (or (jcode--session-info-by-id session-id directory)
+                   (user-error "Unknown jcode session: %s" session-id)))
+         (file (or (jcode-session-info-file info)
+                   (user-error "No session file for: %s" session-id)))
+         (normalized (and title (string-trim title))))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let* ((json-object-type 'alist)
+             (json-array-type 'list)
+             (json-key-type 'symbol)
+             (json-false :false)
+             (data (json-read)))
+        (setf (alist-get 'custom_title data)
+              (unless (string-empty-p (or normalized "")) normalized))
+        (erase-buffer)
+        (insert (json-serialize data :false-object :false :null-object nil))
+        (insert "\n")
+        (write-region (point-min) (point-max) file nil 'silent)))
+    (jcode-refresh-session-list-buffers)
+    normalized))
+
+(defun jcode-list-rename-session (title)
+  "Rename the session at point to TITLE by editing its persisted session file."
+  (interactive (list (read-string "Session title (empty clears): ")))
+  (let ((id (tabulated-list-get-id)))
+    (unless id (user-error "No session at point"))
+    (jcode-rename-session-file id title jcode--session-list-directory)
+    (message "Jcode: renamed session %s" id)))
+
 (defun jcode--delete-session-files (session-ids directory)
   "Delete persisted files for SESSION-IDS in DIRECTORY.
 Return the number of files deleted."
@@ -520,6 +553,7 @@ With prefix argument RESUME-ONLY, attach without replay."
     (define-key map (kbd "d") #'jcode-list-delete-session)
     (define-key map (kbd "x") #'jcode-list-delete-marked-sessions)
     (define-key map (kbd "D") #'jcode-list-delete-marked-sessions)
+    (define-key map (kbd "R") #'jcode-list-rename-session)
     (define-key map (kbd "O") #'jcode-list-open-marked-sessions)
     (define-key map (kbd "P") #'jcode-prune-empty-sessions)
     (define-key map (kbd "RET") #'jcode-list-open)
@@ -541,6 +575,7 @@ With prefix argument RESUME-ONLY, attach without replay."
 (define-key jcode-list-mode-map (kbd "d") #'jcode-list-delete-session)
 (define-key jcode-list-mode-map (kbd "x") #'jcode-list-delete-marked-sessions)
 (define-key jcode-list-mode-map (kbd "D") #'jcode-list-delete-marked-sessions)
+(define-key jcode-list-mode-map (kbd "R") #'jcode-list-rename-session)
 (define-key jcode-list-mode-map (kbd "O") #'jcode-list-open-marked-sessions)
 (define-key jcode-list-mode-map (kbd "P") #'jcode-prune-empty-sessions)
 (define-key jcode-list-mode-map (kbd "RET") #'jcode-list-open)

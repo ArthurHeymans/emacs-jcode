@@ -224,17 +224,9 @@ and set_compaction_mode.")
   "Rename the current native jcode session to TITLE.
 An empty TITLE clears the custom title."
   (interactive (list (read-string "Session title (empty clears): ")))
-  (let* ((display-title (unless (string-empty-p title) title))
-         (chat (jcode--menu-chat))
-         (input (and (buffer-live-p chat)
-                     (buffer-local-value 'jcode--input-buffer chat))))
-    (jcode-native-request-current "rename_session" :title display-title)
-    (dolist (buffer (delq nil (list chat input)))
-      (jcode--set-display-metadata buffer :title display-title))
-    (when display-title
-      (jcode--rename-display-buffers chat input display-title))
-    (jcode-refresh-session-list-buffers)
-    (message "Jcode: rename requested")))
+  (jcode-native-request-current "rename_session"
+                                :title (unless (string-empty-p title) title))
+  (message "Jcode: rename requested; waiting for server confirmation"))
 
 (defun jcode-select-compaction-mode (&optional mode)
   "Select native jcode compaction MODE."
