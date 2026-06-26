@@ -77,6 +77,13 @@
                          "#8ab4f8")))
       (kill-buffer chat))))
 
+(ert-deftest jcode-chat-mode-tab-toggles-blocks-not-indent ()
+  (with-temp-buffer
+    (jcode-chat-mode)
+    (should (eq (key-binding (kbd "TAB")) #'jcode-toggle-block))
+    (should (eq (key-binding (kbd "<tab>")) #'jcode-toggle-block))
+    (should-not (eq (key-binding (kbd "TAB")) #'indent-for-tab-command))))
+
 (ert-deftest jcode-tool-block-collapses-and-expands-long-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-collapse-chat*"))
         (jcode-tool-preview-lines 2))

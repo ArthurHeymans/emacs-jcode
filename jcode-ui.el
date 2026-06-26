@@ -279,6 +279,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 
 (defun jcode--chat-mode-setup ()
   "Shared setup for `jcode-chat-mode'."
+  (use-local-map jcode-chat-mode-map)
   (setq-local buffer-read-only t)
   (setq-local truncate-lines nil)
   (setq-local word-wrap t)
@@ -314,6 +315,13 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
     (jcode--chat-mode-setup)))
 
 (put 'jcode-chat-mode 'mode-class 'special)
+
+;; Keep chat keymaps current when this package is reloaded during development.
+(define-key jcode-chat-mode-map (kbd "q") #'quit-window)
+(define-key jcode-chat-mode-map (kbd "C-c C-k") #'jcode-cancel)
+(define-key jcode-chat-mode-map (kbd "C-c C-d") #'jcode-disconnect)
+(define-key jcode-chat-mode-map (kbd "TAB") #'jcode-toggle-block)
+(define-key jcode-chat-mode-map (kbd "<tab>") #'jcode-toggle-block)
 
 (defvar jcode-input-mode-map
   (let ((map (make-sparse-keymap)))
