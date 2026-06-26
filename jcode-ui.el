@@ -140,7 +140,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
      (t "idle"))))
 
 (defun jcode--header-usage ()
-  "Return token and credential usage text for the header."
+  "Return explicit token usage text for the header."
   (let* ((totals jcode--display-token-usage-totals)
          (input (or (and (listp totals) (alist-get 'input_tokens totals))
                     (and (vectorp jcode--display-total-tokens)
@@ -150,33 +150,47 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                      (and (vectorp jcode--display-total-tokens)
                           (> (length jcode--display-total-tokens) 1)
                           (aref jcode--display-total-tokens 1))))
-         (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals)))
-         (credential (pcase jcode--display-credential
-                       ('nil nil)
-                       (:false nil)
-                       ((and (pred symbolp) sym) (symbol-name sym))
-                       ((and (pred stringp) str) str)
-                       (_ (format "%s" jcode--display-credential)))))
+         (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals))))
     (concat
      (if (or input output)
-         (format " │ ctx %s/%s" (jcode--format-token-count input)
+         (format " │ tokens in %s out %s" (jcode--format-token-count input)
                  (jcode--format-token-count output))
        "")
      (if (and cache-read (> cache-read 0))
-         (format " cache %s" (jcode--format-token-count cache-read))
-       "")
-     (if credential
-         (format " │ %s" credential)
+         (format " cache-read %s" (jcode--format-token-count cache-read))
        ""))))
+
+(defun jcode--header-provider ()
+  "Return provider and credential label for the header."
+  (let ((provider (pcase jcode--display-provider
+                    ('nil nil)
+                    (:false nil)
+                    ((and (pred symbolp) sym) (symbol-name sym))
+                    ((and (pred stringp) str) str)
+                    (_ (format "%s" jcode--display-provider))))
+        (credential (pcase jcode--display-credential
+                      ('nil nil)
+                      (:false nil)
+                      ((and (pred symbolp) sym) (symbol-name sym))
+                      ((and (pred stringp) str) str)
+                      (_ (format "%s" jcode--display-credential)))))
+    (cond
+     ((and provider credential) (format "%s (%s)" provider credential))
+     (provider provider)
+     (credential credential)
+     (t "provider ?"))))
 
 (defun jcode--header-line ()
   "Return Pi-like header line text for current jcode buffer."
   (let* ((session (or jcode--display-title jcode--display-session-id "new"))
+         (provider (jcode--header-provider))
          (model (jcode--shorten-model-name jcode--display-model))
          (reasoning (or jcode--display-reasoning-effort "reasoning ?"))
          (activity (jcode--header-activity))
          (dir (abbreviate-file-name default-directory)))
     (concat
+     (propertize provider 'face 'jcode-dim-face)
+     " │ "
      (propertize model
                  'face 'jcode-assistant-face
                  'mouse-face 'highlight
@@ -210,7 +224,9 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (when token-usage-totals (setq jcode--display-token-usage-totals token-usage-totals))
       (when activity (setq jcode--display-activity activity))
       (when available-models (setq jcode--available-models available-models))
-      (setq header-line-format '(:eval (jcode--header-line))))))
+      (setq header-line-format
+            (when (derived-mode-p 'jcode-input-mode)
+              '(:eval (jcode--header-line)))))))
 
 (defvar jcode-chat-mode-map
   (let ((map (make-sparse-keymap)))
@@ -227,7 +243,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
   (setq-local buffer-read-only t)
   (setq-local truncate-lines nil)
   (setq-local word-wrap t)
-  (setq-local header-line-format '(:eval (jcode--header-line)))
+  (setq-local header-line-format nil)
   (setq-local window-point-insertion-type t)
   (setq-local face-remapping-alist
               '((default jcode-text-face default)

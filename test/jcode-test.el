@@ -177,6 +177,39 @@
                                   (title . "Implementation notes")) nil)
                  "write Implementation notes")))
 
+(ert-deftest jcode-header-renders-only-on-input-with-clear-usage ()
+  (let ((chat (generate-new-buffer " *jcode-test-header-chat*"))
+        (input (generate-new-buffer " *jcode-test-header-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (dolist (buffer (list chat input))
+            (jcode--set-display-metadata
+             buffer
+             :provider "anthropic"
+             :credential "oauth"
+             :model "claude-sonnet-4"
+             :reasoning-effort "xhigh"
+             :token-usage-totals '((input_tokens . 64000000)
+                                   (output_tokens . 171100)
+                                   (cache_read_input_tokens . 60900000))))
+          (with-current-buffer chat
+            (should-not header-line-format))
+          (with-current-buffer input
+            (let ((header (jcode--header-line)))
+              (should (string-match-p "anthropic (oauth).*sonnet-4" header))
+              (should (string-match-p "tokens in 64\\.0M out 171\\.1k" header))
+              (should (string-match-p "cache-read 60\\.9M" header))
+              (should-not (string-match-p "ctx" header)))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-native-send-dead-process-has-friendly-error ()
+  (let ((connection (jcode--make-native-connection :process nil)))
+    (should-error (jcode-native--send connection '(:type "set_model"))
+                  :type 'user-error)))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))

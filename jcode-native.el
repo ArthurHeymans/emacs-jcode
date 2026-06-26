@@ -69,9 +69,17 @@ history."
 
 (defun jcode-native--send (connection object)
   "Send native protocol OBJECT through CONNECTION."
-  (process-send-string
-   (jcode-native-connection-process connection)
-   (concat (json-serialize object :false-object :false :null-object nil) "\n")))
+  (let ((process (and connection (jcode-native-connection-process connection))))
+    (unless (and process (process-live-p process))
+      (user-error "Native jcode connection is closed; run M-x jcode-reconnect"))
+    (condition-case err
+        (process-send-string
+         process
+         (concat (json-serialize object :false-object :false :null-object nil) "\n"))
+      (error
+       (jcode-native-close connection)
+       (user-error "Native jcode connection is closed; run M-x jcode-reconnect (%s)"
+                   (error-message-string err))))))
 
 (defun jcode-native--request (connection type &rest fields)
   "Send request TYPE with FIELDS through CONNECTION."
