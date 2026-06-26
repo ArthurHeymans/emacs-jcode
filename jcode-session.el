@@ -247,13 +247,11 @@ because they can correspond to currently open Emacs/TUI windows."
                           ('viewing "viewing")
                           ((and (pred stringp) s) s)
                           (_ nil)))
-                 (count (and (numberp jcode--display-client-count)
-                             (format "x%d" jcode--display-client-count)))
                  (transport (and (stringp jcode--display-connection-type)
                                  (not (string-empty-p jcode--display-connection-type))
                                  jcode--display-connection-type)))
             (throw 'label
-                   (string-join (delq nil (list "Emacs" owner count transport)) " "))))))))
+                   (string-join (delq nil (list "Emacs" owner transport)) " "))))))))
 
 (defun jcode--annotate-session-runtime (sessions directory)
   "Annotate SESSIONS with runtime location and live client metadata."

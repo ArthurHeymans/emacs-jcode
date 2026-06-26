@@ -1804,7 +1804,7 @@
           (jcode--annotate-session-runtime (list info) "/ssh:example:/tmp/project/")
           (let ((columns (cadr (jcode--session-list-entry info))))
             (should (equal (aref columns 2) "remote ssh:example"))
-            (should (equal (aref columns 3) "Emacs owned x2 native"))))
+            (should (equal (aref columns 3) "Emacs owned native"))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-native-json-read-parses-history ()
