@@ -98,7 +98,7 @@
           pname = "jcode-emacs";
           version = "0.1.0";
           src = packageSrc;
-          packageRequires = [ ];
+          packageRequires = [ pkgs.emacsPackages.md-ts-mode ];
           meta = {
             description = "Emacs frontend for jcode";
             license = lib.licenses.gpl3Plus;
@@ -110,7 +110,9 @@
 
         apps.jcode = flake-utils.lib.mkApp { drv = jcode; };
 
-        checks.default = pkgs.runCommand "jcode-emacs-check" { nativeBuildInputs = [ pkgs.emacs ]; } ''
+        checks.default = pkgs.runCommand "jcode-emacs-check" {
+          nativeBuildInputs = [ (pkgs.emacs.pkgs.withPackages (epkgs: [ epkgs.md-ts-mode ])) ];
+        } ''
           cp ${packageSrc}/*.el .
           mkdir test
           cp ${./test}/*.el test/

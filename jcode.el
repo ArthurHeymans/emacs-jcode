@@ -1,7 +1,7 @@
 ;;; jcode.el --- Emacs frontend for jcode -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "29.1") (md-ts-mode "0.3.0"))
 ;; Version: 0.1.0
 ;; Keywords: ai llm tools
 

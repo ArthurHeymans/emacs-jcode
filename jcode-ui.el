@@ -9,6 +9,7 @@
 
 (require 'cl-lib)
 (require 'project)
+(require 'md-ts-mode nil t)
 
 (declare-function jcode-send "jcode-input")
 (declare-function jcode-cancel "jcode-input")
@@ -31,6 +32,14 @@
 (defcustom jcode-input-window-height 10
   "Height of the jcode input window."
   :type '(choice (natnum :tag "Lines") (float :tag "Fraction"))
+  :group 'jcode)
+
+(defcustom jcode-chat-markdown-rendering t
+  "Whether jcode chat buffers use tree-sitter markdown rendering when available.
+When non-nil and `md-ts-mode' is installed, chat buffers derive from
+`md-ts-mode' and hide markdown markup for a cleaner pi-like transcript.
+When nil or unavailable, chat buffers fall back to `special-mode'."
+  :type 'boolean
   :group 'jcode)
 
 (defface jcode-user-face '((t :inherit font-lock-keyword-face :weight bold)) "User heading face." :group 'jcode)
@@ -194,12 +203,32 @@
     map)
   "Keymap for `jcode-chat-mode'.")
 
-(define-derived-mode jcode-chat-mode special-mode "Jcode-Chat"
-  "Major mode for jcode chat buffers."
+(defun jcode--chat-mode-setup ()
+  "Shared setup for `jcode-chat-mode'."
   (setq-local buffer-read-only t)
   (setq-local truncate-lines nil)
+  (setq-local word-wrap t)
   (setq-local header-line-format '(:eval (jcode--header-line)))
+  (setq-local window-point-insertion-type t)
+  (when (derived-mode-p 'md-ts-mode)
+    ;; Pi-style display: keep canonical markdown in the buffer but hide markup
+    ;; such as **, inline backticks, and fences in the visible transcript.
+    (setq-local md-ts-hide-markup t)
+    (when (fboundp 'md-ts--set-hide-markup)
+      (md-ts--set-hide-markup t)))
   (add-hook 'kill-buffer-hook #'jcode--kill-linked-buffer nil t))
+
+(define-derived-mode jcode-chat-mode special-mode "Jcode-Chat"
+  "Major mode for jcode chat buffers."
+  (jcode--chat-mode-setup))
+
+(when (and jcode-chat-markdown-rendering (fboundp 'md-ts-mode))
+  (define-derived-mode jcode-chat-mode md-ts-mode "Jcode-Chat"
+    "Major mode for jcode chat buffers.
+Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
+    (jcode--chat-mode-setup)))
+
+(put 'jcode-chat-mode 'mode-class 'special)
 
 (defvar jcode-input-mode-map
   (let ((map (make-sparse-keymap)))

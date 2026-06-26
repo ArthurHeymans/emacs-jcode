@@ -14,6 +14,7 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 - completion picker and tabulated list for previous jcode sessions from =~/.jcode/sessions=
 - =jcode-current= to reconnect to the latest session for the current project
 - Pi-like header line with current session/status/model/project metadata
+- tree-sitter markdown rendering for chat buffers via =md-ts-mode= when available, with hidden markup like Pi
 - previous-session opening replays history by default so old chats are visible
 - =session/update= rendering for assistant/user chunks and tool updates
 - TRAMP-aware ACP process launching via =start-file-process=
@@ -22,6 +23,7 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 * Requirements
 
 - Emacs 29.1+
+- =md-ts-mode= for tree-sitter markdown rendering.  If unavailable, chat buffers fall back to plain read-only rendering.
 - =jcode= in =exec-path=, or set =jcode-program=
 
 * Usage

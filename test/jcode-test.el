@@ -48,6 +48,20 @@
             (should (string-match-p "hi" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-chat-mode-uses-markdown-rendering-when-available ()
+  (let ((chat (generate-new-buffer " *jcode-test-md-chat*")))
+    (unwind-protect
+        (with-current-buffer chat
+          (jcode-chat-mode)
+          (should (derived-mode-p 'jcode-chat-mode))
+          (when (fboundp 'md-ts-mode)
+            (should (derived-mode-p 'md-ts-mode))
+            (should (bound-and-true-p md-ts-hide-markup)))
+          (should buffer-read-only)
+          (should word-wrap)
+          (should (eq (get 'jcode-chat-mode 'mode-class) 'special)))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
