@@ -503,6 +503,13 @@ and STATE is \"on\" or \"off\"."
   "Handle native protocol EVENT for CONNECTION."
   (let ((type (alist-get 'type event))
         (chat (jcode-native-connection-chat connection)))
+    (when-let ((session-id (or (alist-get 'session_id event)
+                               (alist-get 'sessionId event))))
+      (unless (equal session-id (jcode-native-connection-session-id connection))
+        (setf (jcode-native-connection-session-id connection) session-id)
+        (when (fboundp 'jcode-apply-session-info-to-buffers)
+          (jcode-apply-session-info-to-buffers
+           session-id chat (jcode-native-connection-input connection)))))
     (pcase type
       ("history" (jcode-native--render-history connection event))
       ("compacted_history" (jcode-native--render-compacted-history connection event))

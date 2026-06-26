@@ -13,12 +13,14 @@
 (require 'jcode-native)
 
 (declare-function jcode-session-prompt "jcode-acp")
+(declare-function jcode-session-busy "jcode-acp" (session))
 (declare-function jcode-session-cancel "jcode-acp")
 (declare-function jcode-session-close "jcode-acp")
 (declare-function jcode-session-start "jcode-acp")
 (declare-function jcode-native-message "jcode-native" (connection content))
 (declare-function jcode-native-steer "jcode-native" (connection content))
 (declare-function jcode-native-cancel "jcode-native" (connection))
+(declare-function jcode-native-open-session "jcode-native" (session-id cwd chat input))
 (declare-function jcode-native-close "jcode-native" (connection))
 (declare-function jcode-execute-slash-command "jcode-menu" (command))
 
@@ -259,9 +261,8 @@ If a native session is busy, queue the text as a follow-up."
       (delete-region (point-min) (point-max))
       (jcode-render-user chat text)
       (jcode--section chat "Assistant" 'jcode-assistant-face)
-      (jcode-session-start default-directory chat (current-buffer) nil nil
-                           (lambda (started-session)
-                             (jcode-session-prompt started-session text))))
+      (let ((connection (jcode-native-open-session nil default-directory chat (current-buffer))))
+        (jcode-native-message connection text)))
      ((or native session)
       (jcode--history-add text)
       (delete-region (point-min) (point-max))
