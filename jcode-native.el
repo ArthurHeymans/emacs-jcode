@@ -120,6 +120,10 @@ history."
   (jcode-native--request connection "set_reasoning_effort" :effort effort
                          :target_session_id (jcode-native-connection-session-id connection)))
 
+(defun jcode-native-set-service-tier (connection service-tier)
+  "Set CONNECTION's SERVICE-TIER."
+  (jcode-native--request connection "set_service_tier" :service_tier service-tier))
+
 (defun jcode-native--current-chat ()
   "Return the chat buffer associated with the current jcode buffer."
   (cond
@@ -162,6 +166,20 @@ history."
     (dolist (buffer (list chat (jcode-native-connection-input connection)))
       (jcode--set-display-metadata buffer :reasoning-effort next))
     (message "Jcode: Reasoning effort %s" next)))
+
+(defun jcode-toggle-fast-mode ()
+  "Toggle native jcode fast mode from the header."
+  (interactive)
+  (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
+         (connection (or (buffer-local-value 'jcode--native-connection chat)
+                         (user-error "No native jcode connection")))
+         (current (buffer-local-value 'jcode--display-service-tier chat))
+         (enabled (member (format "%s" current) '("priority" "fast")))
+         (next (if enabled "off" "priority")))
+    (jcode-native-set-service-tier connection next)
+    (dolist (buffer (list chat (jcode-native-connection-input connection)))
+      (jcode--set-display-metadata buffer :service-tier next))
+    (message "Jcode: fast mode %s" (if enabled "off" "on"))))
 
 (defun jcode-native--drain-followup (connection)
   "Send next queued follow-up for CONNECTION, if any."
@@ -232,6 +250,7 @@ history."
         (provider (alist-get 'provider_name event))
         (server (alist-get 'server_name event))
         (reasoning (alist-get 'reasoning_effort event))
+        (service-tier (alist-get 'service_tier event))
         (credential (alist-get 'resolved_credential event))
         (total-tokens (alist-get 'total_tokens event))
         (token-usage-totals (alist-get 'token_usage_totals event))
@@ -250,6 +269,7 @@ history."
        :model model
        :provider provider
        :reasoning-effort reasoning
+       :service-tier service-tier
        :credential credential
        :total-tokens total-tokens
        :token-usage-totals token-usage-totals
@@ -290,8 +310,13 @@ history."
       ("reasoning_effort_changed"
        (if-let ((error (alist-get 'error event)))
            (jcode-render-error chat error)
+	 (dolist (buffer (list chat (jcode-native-connection-input connection)))
+	   (jcode--set-display-metadata buffer :reasoning-effort (alist-get 'effort event)))))
+      ("service_tier_changed"
+       (if-let ((error (alist-get 'error event)))
+           (jcode-render-error chat error)
          (dolist (buffer (list chat (jcode-native-connection-input connection)))
-           (jcode--set-display-metadata buffer :reasoning-effort (alist-get 'effort event)))))
+           (jcode--set-display-metadata buffer :service-tier (or (alist-get 'service_tier event) "off")))))
       ("reasoning_delta" (jcode-native--mark-busy connection))
       ("text_delta"
        (jcode-native--mark-busy connection)

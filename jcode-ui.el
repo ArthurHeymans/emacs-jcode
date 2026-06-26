@@ -20,6 +20,7 @@
 (declare-function jcode-steer "jcode-input")
 (declare-function jcode-select-model "jcode-native")
 (declare-function jcode-cycle-reasoning-effort "jcode-native")
+(declare-function jcode-toggle-fast-mode "jcode-native")
 (declare-function jcode-toggle-block "jcode-render")
 (declare-function jcode--file-reference-capf "jcode-input")
 (declare-function jcode--path-capf "jcode-input")
@@ -73,6 +74,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defvar-local jcode--display-status nil)
 (defvar-local jcode--display-model nil)
 (defvar-local jcode--display-reasoning-effort nil)
+(defvar-local jcode--display-service-tier nil)
 (defvar-local jcode--display-provider nil)
 (defvar-local jcode--display-credential nil)
 (defvar-local jcode--display-total-tokens nil)
@@ -98,6 +100,13 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (define-key map [mode-line mouse-1] #'jcode-cycle-reasoning-effort)
     map)
   "Keymap for clicking the reasoning effort in the jcode header.")
+
+(defvar jcode--header-fast-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'jcode-toggle-fast-mode)
+    (define-key map [mode-line mouse-1] #'jcode-toggle-fast-mode)
+    map)
+  "Keymap for clicking fast mode in the jcode header.")
 
 (defun jcode--normalize-directory (dir)
   "Normalize DIR for project/session comparisons."
@@ -155,7 +164,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (if owner (format " │ %s" owner) "")))
 
 (defun jcode--header-token-values ()
-  "Return (INPUT OUTPUT CACHE-READ) token values for the header."
+  "Return (INPUT OUTPUT CACHE-READ CACHE-CREATION) token values for the header."
   (let* ((totals jcode--display-token-usage-totals)
          (input (or (and (listp totals) (alist-get 'input_tokens totals))
                     (and (vectorp jcode--display-total-tokens)
@@ -165,28 +174,57 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                      (and (vectorp jcode--display-total-tokens)
                           (> (length jcode--display-total-tokens) 1)
                           (aref jcode--display-total-tokens 1))))
-         (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals))))
-    (list input output cache-read)))
+         (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals)))
+         (cache-creation (and (listp totals) (alist-get 'cache_creation_input_tokens totals))))
+    (list input output cache-read cache-creation)))
+
+(defun jcode--header-effective-context-tokens ()
+  "Return observed context tokens derived like the native TUI, or nil."
+  (pcase-let ((`(,input _ ,cache-read ,cache-creation) (jcode--header-token-values)))
+    (when (and (numberp input) (> input 0))
+      (let* ((provider (downcase (format "%s" (or jcode--display-provider ""))))
+             (cache-read (or cache-read 0))
+             (cache-creation (or cache-creation 0))
+             (split-cache-accounting
+              (or (string-match-p "anthropic\\|claude" provider)
+                  (> cache-creation 0)
+                  (> cache-read input))))
+        (if split-cache-accounting
+            (+ input cache-read cache-creation)
+          input)))))
 
 (defun jcode--header-context ()
-  "Return current/max context usage text for the header."
-  (pcase-let ((`(,input _ ,_) (jcode--header-token-values)))
-    (if (and input (numberp jcode--display-context-window))
-	(format " │ context %s/%s"
-		(jcode--format-token-count input)
+  "Return observed context/max context usage text for the header."
+  (let ((context (jcode--header-effective-context-tokens)))
+    (if (and context (numberp jcode--display-context-window))
+	(format " │ ctx %s/%s"
+		(jcode--format-token-count context)
 		(jcode--format-token-count jcode--display-context-window))
       "")))
 
 (defun jcode--header-session-usage ()
   "Return explicit session token usage text for the header."
-  (pcase-let ((`(_ ,output ,cache-read) (jcode--header-token-values)))
-	(concat
-	 (if output
-	     (format " │ tokens out %s" (jcode--format-token-count output))
+  (pcase-let ((`(,input ,output ,cache-read _) (jcode--header-token-values)))
+    (concat
+     (if input
+         (format " │ total in %s" (jcode--format-token-count input))
+       "")
+     (if output
+	     (format " out %s" (jcode--format-token-count output))
 	   "")
 	 (if (and cache-read (> cache-read 0))
 	     (format " cache %s" (jcode--format-token-count cache-read))
 	   ""))))
+
+(defun jcode--header-fast-label ()
+  "Return fast-mode label for the header."
+  (let ((tier (and jcode--display-service-tier
+                   (format "%s" jcode--display-service-tier))))
+    (cond
+     ((member tier '("priority" "fast")) "fast on")
+     ((member tier '("off" "flex")) "fast off")
+     (tier (format "fast %s" tier))
+     (t "fast ?"))))
 
 (defun jcode--header-provider ()
   "Return provider and credential label for the header."
@@ -223,18 +261,23 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                  'help-echo "mouse-1: Select model"
                  'local-map jcode--header-model-map)
      " • "
-     (propertize reasoning
-                 'mouse-face 'highlight
-                 'help-echo "mouse-1: Cycle reasoning effort"
-                 'local-map jcode--header-reasoning-map)
-     " "
+	     (propertize reasoning
+			 'mouse-face 'highlight
+			 'help-echo "mouse-1: Cycle reasoning effort"
+			 'local-map jcode--header-reasoning-map)
+	     " • "
+	     (propertize (jcode--header-fast-label)
+			 'mouse-face 'highlight
+			 'help-echo "mouse-1: Toggle fast mode"
+			 'local-map jcode--header-fast-map)
+	     " "
      (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
      (propertize (jcode--header-owner) 'face 'jcode-dim-face)
      (jcode--header-context)
      (jcode--header-session-usage))))
 
 (cl-defun jcode--set-display-metadata (buffer &key session-id title status model
-                                               reasoning-effort provider credential
+                                               reasoning-effort service-tier provider credential
                                                total-tokens token-usage-totals
                                                context-window client-count connection-type owner
                                                activity available-models)
@@ -246,6 +289,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (when status (setq jcode--display-status status))
       (when model (setq jcode--display-model model))
       (when reasoning-effort (setq jcode--display-reasoning-effort reasoning-effort))
+      (when service-tier (setq jcode--display-service-tier service-tier))
       (when provider (setq jcode--display-provider provider))
       (when credential (setq jcode--display-credential credential))
       (when total-tokens (setq jcode--display-total-tokens total-tokens))

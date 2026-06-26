@@ -319,6 +319,7 @@
              :credential "oauth"
              :model "claude-sonnet-4"
              :reasoning-effort "xhigh"
+             :service-tier "priority"
              :context-window 200000000
              :client-count 2
              :owner 'owned
@@ -332,14 +333,14 @@
               (should (string-match-p "anthropic (oauth).*sonnet-4" header))
               (should (string-match-p "xhigh" header))
               (should-not (string-match-p "think xhigh" header))
+              (should (string-match-p "fast on" header))
               (should (string-match-p "owned" header))
               (should-not (string-match-p "owner Emacs" header))
               (should-not (string-match-p "clients 2" header))
-              (should (string-match-p "context 64\\.0M/200\\.0M" header))
-              (should (string-match-p "tokens out 171\\.1k" header))
+              (should (string-match-p "ctx 124\\.9M/200\\.0M" header))
+              (should (string-match-p "total in 64\\.0M out 171\\.1k" header))
               (should (string-match-p "cache 60\\.9M" header))
               (should-not (string-match-p "usage input" header))
-              (should-not (string-match-p "ctx" header))
               (should-not (string-match-p "emacs-jcode" header)))))
       (kill-buffer chat)
       (kill-buffer input))))
@@ -349,6 +350,48 @@
     (should-error (jcode-native--send connection '(:type "set_model"))
                   :type 'user-error)))
 
+(ert-deftest jcode-fast-mode-header-click-sends-service-tier-toggle ()
+  (let ((chat (generate-new-buffer " *jcode-test-fast-chat*"))
+        (input (generate-new-buffer " *jcode-test-fast-input*"))
+        sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode) (setq jcode--chat-buffer chat))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (with-current-buffer chat
+              (setq jcode--native-connection connection)
+              (jcode--set-display-metadata chat :service-tier "off"))
+            (cl-letf (((symbol-function 'jcode-native--request)
+                       (lambda (_connection type &rest fields)
+                         (setq sent (cons type fields))
+                         7))
+                      ((symbol-function 'message) #'ignore))
+              (with-current-buffer input
+                (jcode-toggle-fast-mode)))
+            (should (equal sent '("set_service_tier" :service_tier "priority")))
+            (with-current-buffer input
+              (should (equal jcode--display-service-tier "priority")))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-service-tier-event-updates-header ()
+  (let ((chat (generate-new-buffer " *jcode-test-fast-event-chat*"))
+        (input (generate-new-buffer " *jcode-test-fast-event-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode-native--handle-event
+             connection '((type . "service_tier_changed")
+                          (service_tier . "priority")))
+            (with-current-buffer input
+              (should (equal jcode--display-service-tier "priority"))
+              (should (string-match-p "fast on" (jcode--header-line))))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-header-hides-context-when-max-unknown ()
   (with-temp-buffer
     (jcode-input-mode)
@@ -356,8 +399,8 @@
      (current-buffer)
      :token-usage-totals '((input_tokens . 1200) (output_tokens . 300)))
     (let ((header (jcode--header-line)))
-      (should-not (string-match-p "context" header))
-      (should (string-match-p "tokens out 300" header)))))
+      (should-not (string-match-p "ctx" header))
+      (should (string-match-p "total in 1\\.2k out 300" header)))))
 
 (ert-deftest jcode-native-event-context-window-recognizes-aliases ()
   (should (equal (jcode-native--event-context-window '((max_context_tokens . 200000)))
