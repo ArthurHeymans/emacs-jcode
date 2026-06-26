@@ -108,7 +108,9 @@ and STATE is \"on\" or \"off\"."
 
 (defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
-  (let ((file (jcode--servers-file directory)))
+  (let* ((directory (or directory default-directory))
+         (file (jcode--servers-file directory))
+         (remote (file-remote-p directory)))
     (or (when (file-readable-p file)
           (condition-case nil
               (with-temp-buffer
@@ -116,10 +118,14 @@ and STATE is \"on\" or \"off\"."
                 (let* ((json-object-type 'alist)
                        (json-key-type 'symbol)
                        (data (json-read))
-                       (server (cdar data)))
-                  (alist-get 'socket server)))
+                       (server (cdar data))
+                       (socket (alist-get 'socket server)))
+                  (if (and remote socket (file-name-absolute-p socket)
+                           (not (file-remote-p socket)))
+                      (concat remote socket)
+                    socket)))
             (error nil)))
-        (concat (or (file-remote-p (or directory default-directory)) "")
+        (concat (or remote "")
                 "/run/user/" (jcode-native--uid directory) "/jcode.sock"))))
 
 (defun jcode-native--uid (&optional directory)

@@ -1225,6 +1225,17 @@
     (should (equal (jcode-native-socket-path "/ssh:test-host:/tmp/project/")
                    "/ssh:test-host:/run/user/4242/jcode.sock"))))
 
+(ert-deftest jcode-native-socket-path-prefixes-remote-server-socket ()
+  (cl-letf (((symbol-function 'jcode--servers-file)
+             (lambda (_directory) "/ssh:test-host:/home/me/.jcode/servers.json"))
+            ((symbol-function 'file-readable-p) (lambda (_file) t))
+            ((symbol-function 'insert-file-contents)
+             (lambda (_file &rest _args)
+               (insert "{\"default\":{\"socket\":\"/run/user/1000/jcode.sock\"}}")
+               nil)))
+    (should (equal (jcode-native-socket-path "/ssh:test-host:/tmp/project/")
+                   "/ssh:test-host:/run/user/1000/jcode.sock"))))
+
 (ert-deftest jcode-native-host-local-socket-path-strips-tramp-prefix ()
   (should (equal (jcode-native--host-local-socket-path
                   "/ssh:test-host:/run/user/4242/jcode.sock"
