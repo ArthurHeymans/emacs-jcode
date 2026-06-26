@@ -109,8 +109,8 @@
     (unwind-protect
         (with-current-buffer chat
           (jcode-chat-mode)
-          (should (assq 'default face-remapping-alist))
-          (should (equal (cadr (assq 'default face-remapping-alist)) 'jcode-text-face))
+          (should-not (assq 'default face-remapping-alist))
+          (should (eq (face-attribute 'jcode-text-face :inherit nil t) 'default))
           (should (equal (cadr (assq 'font-lock-comment-face face-remapping-alist))
                          'jcode-dim-face))
           (should (equal (cadr (assq 'md-ts-heading-1 face-remapping-alist))

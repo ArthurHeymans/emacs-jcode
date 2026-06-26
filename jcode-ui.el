@@ -47,7 +47,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
   :type 'boolean
   :group 'jcode)
 
-(defface jcode-text-face '((t :foreground "#dcdcd7")) "Native jcode assistant/body text face." :group 'jcode)
+(defface jcode-text-face '((t :inherit default)) "Jcode assistant/body text face.  Inherits the active theme default, like Pi." :group 'jcode)
 (defface jcode-user-text-face '((t :foreground "#f5f5ff")) "Native jcode user text face." :group 'jcode)
 (defface jcode-user-bg-face '((t :background "#232832" :extend t)) "Native jcode user background face." :group 'jcode)
 (defface jcode-strong-face '((t :foreground "#f0f0eb" :weight bold)) "Native jcode strong text face." :group 'jcode)
@@ -358,8 +358,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
   (setq-local header-line-format nil)
   (setq-local window-point-insertion-type t)
   (setq-local face-remapping-alist
-              '((default jcode-text-face default)
-                (font-lock-comment-face jcode-dim-face)
+              '((font-lock-comment-face jcode-dim-face)
                 (font-lock-doc-face jcode-dim-face)
                 (font-lock-string-face jcode-code-face)
                 (font-lock-constant-face jcode-code-face)
