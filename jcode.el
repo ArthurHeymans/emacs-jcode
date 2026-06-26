@@ -202,8 +202,8 @@ session immediately."
       (when session-id
         (jcode-apply-session-info-to-buffers session-id chat input))
       (jcode--display-buffers chat input)
-      (when (and session-id (not (buffer-local-value 'jcode--session chat)))
-        (jcode-session-start dir chat input session-id nil))
+      (unless (buffer-local-value 'jcode--native-connection chat)
+        (jcode-native-open-session session-id dir chat input))
       chat)))
 
 ;;;###autoload

@@ -11,6 +11,8 @@
 (require 'jcode-render)
 (require 'jcode-session)
 
+(declare-function jcode-delete-empty-session-file "jcode-session" (session-id &optional directory))
+
 (declare-function jcode-seed-input-history "jcode-input" (prompts))
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
@@ -38,6 +40,11 @@ Passive viewers therefore subscribe for the initial history and poll
 `get_history' as a non-invasive fallback so current-session buffers keep
 updating without taking over another UI client."
   :type 'number
+  :group 'jcode)
+
+(defcustom jcode-native-new-session-id-discovery-delays '(0.2 1.0 2.0)
+  "Delays used to discover the daemon-assigned id for newly opened sessions."
+  :type '(repeat number)
   :group 'jcode)
 
 (defcustom jcode-native-take-over-active-session t
@@ -370,6 +377,9 @@ and STATE is \"on\" or \"off\"."
 (defun jcode-native-close (connection)
   "Close native CONNECTION and cancel its refresh timer."
   (when connection
+    (when-let ((session-id (jcode-native-connection-session-id connection)))
+      (ignore-errors
+        (jcode-delete-empty-session-file session-id (jcode-native-connection-cwd connection))))
     (when-let ((timer (jcode-native-connection-poll-timer connection)))
       (cancel-timer timer)
       (setf (jcode-native-connection-poll-timer connection) nil))
@@ -391,6 +401,29 @@ and STATE is \"on\" or \"off\"."
             (jcode-native--request connection "get_history")
           (error nil)))
     (jcode-native-close connection)))
+
+(defun jcode-native--bind-discovered-session-id (connection)
+  "Bind CONNECTION buffers to the latest persisted session id for its cwd."
+  (when (and connection
+             (not (jcode-native-connection-session-id connection))
+             (buffer-live-p (jcode-native-connection-chat connection)))
+    (when-let* ((cwd (jcode-native-connection-cwd connection))
+                (info (jcode-latest-session cwd t))
+                (session-id (jcode-session-info-id info)))
+      (setf (jcode-native-connection-session-id connection) session-id)
+      (jcode-apply-session-info-to-buffers
+       session-id
+       (jcode-native-connection-chat connection)
+       (jcode-native-connection-input connection))
+      (dolist (buffer (list (jcode-native-connection-chat connection)
+                            (jcode-native-connection-input connection)))
+        (jcode--set-display-metadata buffer :session-id session-id)))))
+
+(defun jcode-native--schedule-session-id-discovery (connection)
+  "Schedule best-effort discovery of daemon-assigned session id for CONNECTION."
+  (unless (jcode-native-connection-session-id connection)
+    (dolist (delay jcode-native-new-session-id-discovery-delays)
+      (run-with-timer delay nil #'jcode-native--bind-discovered-session-id connection))))
 
 (defun jcode-native--render-history-message (chat message)
   "Render native history MESSAGE into CHAT."
@@ -667,6 +700,7 @@ and STATE is \"on\" or \"off\"."
     (dolist (buffer (list chat input))
       (jcode--set-display-metadata
        buffer :owner (if jcode-native-take-over-active-session 'owned 'viewing)))
+    (jcode-native--schedule-session-id-discovery connection)
     (jcode-native-apply-defaults connection)
     connection))
 

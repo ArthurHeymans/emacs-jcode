@@ -510,6 +510,16 @@ Return the number of files deleted."
         (delete-file file)
         (setq deleted (1+ deleted))))))
 
+(defun jcode-delete-empty-session-file (session-id &optional directory)
+  "Delete SESSION-ID's persisted file if it is empty and unsaved.
+Return non-nil when a file was deleted."
+  (let ((jcode-hide-empty-sessions nil))
+    (when-let* ((info (jcode--session-info-by-id session-id directory))
+                (file (jcode-session-info-file info)))
+      (when (jcode--session-empty-p info)
+        (delete-file file)
+        t))))
+
 (defun jcode-list-delete-session ()
   "Delete the session file at point after confirmation."
   (interactive)
