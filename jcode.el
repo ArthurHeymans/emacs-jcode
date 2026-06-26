@@ -187,11 +187,11 @@ session takeover so this client receives live streaming updates."
 (defun jcode (&optional session-id)
   "Open jcode buffers for the current project.
 Without SESSION-ID, defer creating a persisted jcode session until the first
-prompt is sent.  With prefix argument, prompt for SESSION-ID and load that
-session immediately."
+prompt is sent.  With prefix argument, prompt for a new/named SESSION-ID so
+multiple sessions can be launched for the same project."
   (interactive
    (list (when current-prefix-arg
-           (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
+           (read-string "Session name: "))))
   (if-let ((pair (and (not session-id)
                      (jcode--current-buffer-pair))))
       (jcode--show-session-buffers (car pair) (cdr pair))

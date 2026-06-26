@@ -792,6 +792,27 @@
       (kill-buffer chat)
       (kill-buffer input))))
 
+(ert-deftest jcode-command-new-session-with-prefix-arg ()
+  "\[universal-argument] \[jcode] creates a named session buffer."
+  (let ((root "/tmp/jcode-test-named-session/"))
+    (make-directory root t)
+    (cl-letf (((symbol-function 'project-current) (lambda (&rest _) nil))
+              ((symbol-function 'jcode-native-open-session) #'ignore)
+              ((symbol-function 'jcode--display-buffers) #'ignore)
+              ((symbol-function 'read-string) (lambda (&rest _) "my-session")))
+      (let ((current-prefix-arg '(4))
+            (default-directory root))
+        (unwind-protect
+            (progn
+              (call-interactively #'jcode)
+              (should (get-buffer (jcode--buffer-name "chat" root "my-session")))
+              (should (get-buffer (jcode--buffer-name "input" root "my-session"))))
+          (when-let ((chat (get-buffer (jcode--buffer-name "chat" root "my-session"))) )
+            (kill-buffer chat))
+          (when-let ((input (get-buffer (jcode--buffer-name "input" root "my-session"))))
+            (kill-buffer input))
+          (ignore-errors (delete-directory root t)))))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
