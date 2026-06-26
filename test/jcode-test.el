@@ -958,6 +958,75 @@
       (kill-buffer chat)
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-native-open-process-remote-starts-socat-bridge ()
+  (let ((started-default-directory nil)
+        (started-args nil)
+        coding noquery)
+    (cl-letf (((symbol-function 'start-file-process)
+               (lambda (_name _buffer program &rest args)
+                 (setq started-default-directory default-directory
+                       started-args (cons program args))
+                 (let ((default-directory "/"))
+                   (start-process "jcode-test-cat" nil "cat"))))
+              ((symbol-function 'set-process-coding-system)
+               (lambda (_proc in out) (setq coding (list in out))))
+              ((symbol-function 'set-process-query-on-exit-flag)
+               (lambda (_proc flag) (setq noquery (not flag)))))
+      (let ((proc (jcode-native--open-process
+                   "/ssh:test-host:/tmp/project/"
+                   "/ssh:test-host:/run/user/1000/jcode.sock")))
+        (unwind-protect
+            (progn
+              (should (processp proc))
+              (should (equal started-default-directory "/ssh:test-host:/tmp/project/"))
+              (should (equal (car started-args) jcode-native-remote-bridge-program))
+              (should (equal (cdr started-args)
+                             '("-" "UNIX-CONNECT:/run/user/1000/jcode.sock")))
+              (should (equal coding '(utf-8-emacs-unix utf-8-emacs-unix)))
+              (should noquery))
+          (when (process-live-p proc)
+            (delete-process proc)))))))
+
+(ert-deftest jcode-native-open-process-local-uses-unix-socket ()
+  (let (network-args started-file)
+    (cl-letf (((symbol-function 'make-network-process)
+               (lambda (&rest args)
+                 (setq network-args args)
+                 (let ((default-directory "/"))
+                   (start-process "jcode-test-cat" nil "cat"))))
+              ((symbol-function 'start-file-process)
+               (lambda (&rest _args) (setq started-file t))))
+      (let ((proc (jcode-native--open-process "/tmp/project/" "/run/user/1000/jcode.sock")))
+        (unwind-protect
+            (progn
+              (should (processp proc))
+              (should-not started-file)
+              (should (eq (plist-get network-args :family) 'local))
+              (should (equal (plist-get network-args :service)
+                             "/run/user/1000/jcode.sock")))
+          (when (process-live-p proc)
+            (delete-process proc)))))))
+
+(ert-deftest jcode-native-socket-path-uses-remote-uid-from-file-attributes ()
+  (cl-letf (((symbol-function 'jcode--servers-file)
+             (lambda (_directory) "/ssh:test-host:/missing/servers.json"))
+            ((symbol-function 'file-readable-p) (lambda (_file) nil))
+            ((symbol-function 'file-attributes)
+             (lambda (file &optional id-format)
+               (should (equal file "/ssh:test-host:/tmp/project/"))
+               (should (eq id-format 'integer))
+               ;; See `file-attributes': element 2 is numeric UID when
+               ;; ID-FORMAT is `integer'.
+               (list nil nil 4242))))
+    (should (equal (jcode-native-socket-path "/ssh:test-host:/tmp/project/")
+                   "/ssh:test-host:/run/user/4242/jcode.sock"))))
+
+(ert-deftest jcode-native-host-local-socket-path-strips-tramp-prefix ()
+  (should (equal (jcode-native--host-local-socket-path
+                  "/ssh:test-host:/run/user/4242/jcode.sock"
+                  "/ssh:test-host:/tmp/project/")
+                 "/run/user/4242/jcode.sock")))
+
 (ert-deftest jcode-cycle-reasoning-effort-wraps-xhigh-to-none ()
   (let* ((chat (generate-new-buffer " *jcode-test-reasoning-chat*"))
          (input (generate-new-buffer " *jcode-test-reasoning-input*"))

@@ -49,6 +49,11 @@ history."
   :type 'boolean
   :group 'jcode)
 
+(defcustom jcode-native-remote-bridge-program "socat"
+  "Program used on TRAMP hosts to bridge stdio to the jcode Unix socket."
+  :type 'string
+  :group 'jcode)
+
 (defcustom jcode-default-model nil
   "Model to select automatically for newly connected native sessions.
 Nil leaves the daemon/session default unchanged."
@@ -106,7 +111,47 @@ and STATE is \"on\" or \"off\"."
                   (alist-get 'socket server)))
             (error nil)))
         (concat (or (file-remote-p (or directory default-directory)) "")
-                "/run/user/" (number-to-string (user-uid)) "/jcode.sock"))))
+                "/run/user/" (jcode-native--uid directory) "/jcode.sock"))))
+
+(defun jcode-native--uid (&optional directory)
+  "Return the numeric UID string for DIRECTORY's host."
+  (if (file-remote-p (or directory default-directory))
+      (let* ((directory (file-name-as-directory (or directory default-directory)))
+             (uid (ignore-errors
+                    (file-attribute-user-id (file-attributes directory 'integer)))))
+        (if (integerp uid)
+            (number-to-string uid)
+          (number-to-string (user-uid))))
+    (number-to-string (user-uid))))
+
+(defun jcode-native--host-local-socket-path (socket directory)
+  "Return SOCKET as a path local to DIRECTORY's host."
+  (if-let ((remote (file-remote-p directory)))
+      (if (string-prefix-p remote socket)
+          (substring socket (length remote))
+        socket)
+    socket))
+
+(defun jcode-native--open-process (cwd socket)
+  "Open a native protocol process for CWD using SOCKET."
+  (if (file-remote-p cwd)
+      (let* ((default-directory cwd)
+             (remote-socket (jcode-native--host-local-socket-path socket cwd))
+             (proc (let ((process-connection-type nil))
+                     (start-file-process
+                      "jcode-native-remote"
+                      (generate-new-buffer " *jcode-native-remote* ")
+                      jcode-native-remote-bridge-program
+                      "-" (concat "UNIX-CONNECT:" remote-socket)))))
+        (set-process-coding-system proc 'utf-8-emacs-unix 'utf-8-emacs-unix)
+        (set-process-query-on-exit-flag proc nil)
+        proc)
+    (make-network-process :name "jcode-native"
+                          :buffer (generate-new-buffer " *jcode-native* ")
+                          :family 'local
+                          :service socket
+                          :coding 'utf-8-emacs-unix
+                          :noquery t)))
 
 (defun jcode-native--json-read (line)
   "Read native protocol JSON LINE."
@@ -571,12 +616,7 @@ and STATE is \"on\" or \"off\"."
 (defun jcode-native-open-session (session-id cwd chat input)
   "Open native live SESSION-ID for CWD into CHAT and INPUT."
   (let* ((socket (jcode-native-socket-path cwd))
-         (proc (make-network-process :name "jcode-native"
-                                     :buffer (generate-new-buffer " *jcode-native* ")
-                                     :family 'local
-                                     :service socket
-                                     :coding 'utf-8-emacs-unix
-                                     :noquery t))
+         (proc (jcode-native--open-process cwd socket))
          (connection (jcode--make-native-connection
                       :process proc :chat chat :input input :session-id session-id
                       :cwd cwd :next-id 0 :line-buffer "")))
