@@ -840,6 +840,11 @@
   (should (commandp #'jcode-menu))
   (should (eq (lookup-key jcode-input-mode-map (kbd "C-c C-p")) #'jcode-menu))
   (should (eq (lookup-key jcode-chat-mode-map (kbd "C-c C-p")) #'jcode-menu))
+  (dolist (command '(jcode-select-compaction-mode jcode-select-transport
+                     jcode-select-premium-mode jcode-select-memory-state
+                     jcode-select-swarm-state jcode-select-review-state
+                     jcode-select-judge-state))
+    (should (commandp command)))
   (dolist (command '("/?" "/help" "/compact" "/clear" "/split" "/transfer"
                      "/memory" "/extract-memory" "/swarm" "/review" "/judge"
                      "/model" "/reasoning" "/fast" "/transport" "/premium"
@@ -881,17 +886,77 @@
   (should (equal (jcode--input-slash-command "/?") "/?")))
 
 (ert-deftest jcode-menu-knobs-send-native-protocol-requests ()
-  (let (sent)
-    (cl-letf (((symbol-function 'jcode-native-request-current)
-               (lambda (type &rest fields) (push (cons type fields) sent))))
-      (jcode-select-transport "websocket")
-      (jcode-select-premium-mode "zero")
-      (jcode-set-feature "memory" t)
-      (jcode-select-feature-state "swarm" "off")
-      (should (member '("set_transport" :transport "websocket") sent))
-      (should (member '("set_premium_mode" :mode 2) sent))
-      (should (member '("set_feature" :feature "memory" :enabled t) sent))
-      (should (member '("set_feature" :feature "swarm" :enabled nil) sent)))))
+  (let ((chat (generate-new-buffer " *jcode-test-menu-chat*"))
+        (input (generate-new-buffer " *jcode-test-menu-input*"))
+        sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-native-request-current)
+                   (lambda (type &rest fields) (push (cons type fields) sent))))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (jcode-select-transport "websocket")
+            (jcode-select-premium-mode "zero")
+            (jcode-set-feature "memory" t)
+            (jcode-select-feature-state "swarm" "off"))
+          (should (member '("set_transport" :transport "websocket") sent))
+          (should (member '("set_premium_mode" :mode 2) sent))
+          (should (member '("set_feature" :feature "memory" :enabled t) sent))
+          (should (member '("set_feature" :feature "swarm" :enabled nil) sent))
+          (with-current-buffer chat
+            (should (equal jcode--display-transport "websocket"))
+            (should (equal jcode--display-premium-mode "zero"))
+            (should (equal (cdr (assoc "memory" jcode--display-feature-states)) "on"))
+            (should (equal (cdr (assoc "swarm" jcode--display-feature-states)) "off"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-menu-state-descriptions-show-current-values ()
+  (let ((chat (generate-new-buffer " *jcode-test-menu-state-chat*"))
+        (input (generate-new-buffer " *jcode-test-menu-state-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input)
+            (jcode--set-display-metadata
+             chat
+             :reasoning-effort "low"
+             :service-tier "priority"
+             :transport "websocket"
+             :premium-mode "one"
+             :compaction-mode "semantic"
+             :feature-states '(("memory" . "on") ("swarm" . "off"))))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (should (equal (jcode--menu-desc-effort) "effort: low"))
+            (should (equal (jcode--menu-desc-fast) "fast: priority"))
+            (should (equal (jcode--menu-desc-transport) "transport: websocket"))
+            (should (equal (jcode--menu-desc-premium) "premium: one"))
+            (should (equal (jcode--menu-desc-compaction) "compaction: semantic"))
+            (should (equal (jcode--menu-desc-memory) "memory: on"))
+            (should (equal (jcode--menu-desc-swarm) "swarm: off"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-menu-feature-description-handles-unknown-state ()
+  (let ((chat (generate-new-buffer " *jcode-test-menu-unknown-chat*"))
+        (input (generate-new-buffer " *jcode-test-menu-unknown-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (should (equal (jcode--menu-desc-memory) "memory: ?"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
 
 (ert-deftest jcode-send-executes-known-slash-command-locally ()
   (let ((chat (generate-new-buffer " *jcode-test-slash-chat*"))

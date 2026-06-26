@@ -83,6 +83,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defvar-local jcode--display-model nil)
 (defvar-local jcode--display-reasoning-effort nil)
 (defvar-local jcode--display-service-tier nil)
+(defvar-local jcode--display-transport nil)
+(defvar-local jcode--display-premium-mode nil)
+(defvar-local jcode--display-compaction-mode nil)
+(defvar-local jcode--display-feature-states nil)
 (defvar-local jcode--display-provider nil)
 (defvar-local jcode--display-credential nil)
 (defvar-local jcode--display-total-tokens nil)
@@ -301,7 +305,9 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
      (jcode--header-session-usage))))
 
 (cl-defun jcode--set-display-metadata (buffer &key session-id title status model
-                                               reasoning-effort service-tier provider credential
+                                               reasoning-effort service-tier transport
+                                               premium-mode compaction-mode feature-states
+                                               provider credential
                                                total-tokens token-usage-totals
                                                context-window client-count connection-type owner
                                                activity available-models)
@@ -314,6 +320,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (when model (setq jcode--display-model model))
       (when reasoning-effort (setq jcode--display-reasoning-effort reasoning-effort))
       (when service-tier (setq jcode--display-service-tier service-tier))
+      (when transport (setq jcode--display-transport transport))
+      (when premium-mode (setq jcode--display-premium-mode premium-mode))
+      (when compaction-mode (setq jcode--display-compaction-mode compaction-mode))
+      (when feature-states (setq jcode--display-feature-states feature-states))
       (when provider (setq jcode--display-provider provider))
       (when credential (setq jcode--display-credential credential))
       (when total-tokens (setq jcode--display-total-tokens total-tokens))

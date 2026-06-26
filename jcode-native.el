@@ -275,6 +275,8 @@ history."
         (server (alist-get 'server_name event))
         (reasoning (alist-get 'reasoning_effort event))
         (service-tier (alist-get 'service_tier event))
+        (transport (alist-get 'transport event))
+        (compaction-mode (alist-get 'compaction_mode event))
         (credential (alist-get 'resolved_credential event))
         (total-tokens (alist-get 'total_tokens event))
         (token-usage-totals (alist-get 'token_usage_totals event))
@@ -294,6 +296,8 @@ history."
        :provider provider
        :reasoning-effort reasoning
        :service-tier service-tier
+       :transport transport
+       :compaction-mode compaction-mode
        :credential credential
        :total-tokens total-tokens
        :token-usage-totals token-usage-totals
@@ -341,6 +345,16 @@ history."
            (jcode-render-error chat error)
          (dolist (buffer (list chat (jcode-native-connection-input connection)))
            (jcode--set-display-metadata buffer :service-tier (or (alist-get 'service_tier event) "off")))))
+      ("transport_changed"
+       (if-let ((error (alist-get 'error event)))
+           (jcode-render-error chat error)
+         (dolist (buffer (list chat (jcode-native-connection-input connection)))
+           (jcode--set-display-metadata buffer :transport (alist-get 'transport event)))))
+      ("compaction_mode_changed"
+       (if-let ((error (alist-get 'error event)))
+           (jcode-render-error chat error)
+         (dolist (buffer (list chat (jcode-native-connection-input connection)))
+           (jcode--set-display-metadata buffer :compaction-mode (alist-get 'mode event)))))
       ("reasoning_delta"
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))

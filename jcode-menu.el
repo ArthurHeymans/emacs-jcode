@@ -67,6 +67,63 @@ and set_compaction_mode.")
 (defconst jcode-feature-toggles '("memory" "swarm" "autoreview" "autojudge")
   "Native jcode runtime features exposed by the menu.")
 
+(defun jcode--menu-state-value (variable &optional fallback)
+  "Return current chat-local VARIABLE value or FALLBACK."
+  (let ((chat (ignore-errors (jcode--menu-chat))))
+    (if (buffer-live-p chat)
+        (with-current-buffer chat
+          (or (and (boundp variable) (symbol-value variable)) fallback "?"))
+      (or fallback "?"))))
+
+(defun jcode--menu-feature-value (feature)
+  "Return current menu display value for FEATURE."
+  (let ((states (jcode--menu-state-value 'jcode--display-feature-states nil)))
+    (or (and (listp states) (cdr (assoc feature states))) "?")))
+
+(defun jcode--menu-setting-description (label variable &optional fallback)
+  "Return transient description for LABEL from chat-local VARIABLE."
+  (format "%s: %s" label (jcode--menu-state-value variable fallback)))
+
+(defun jcode--menu-feature-description (label feature)
+  "Return transient description for LABEL and FEATURE."
+  (format "%s: %s" label (jcode--menu-feature-value feature)))
+
+(defun jcode--menu-desc-effort ()
+  "Return reasoning effort transient description."
+  (jcode--menu-setting-description "effort" 'jcode--display-reasoning-effort))
+
+(defun jcode--menu-desc-fast ()
+  "Return fast/service tier transient description."
+  (jcode--menu-setting-description "fast" 'jcode--display-service-tier "off"))
+
+(defun jcode--menu-desc-transport ()
+  "Return transport transient description."
+  (jcode--menu-setting-description "transport" 'jcode--display-transport))
+
+(defun jcode--menu-desc-premium ()
+  "Return premium mode transient description."
+  (jcode--menu-setting-description "premium" 'jcode--display-premium-mode))
+
+(defun jcode--menu-desc-compaction ()
+  "Return compaction mode transient description."
+  (jcode--menu-setting-description "compaction" 'jcode--display-compaction-mode))
+
+(defun jcode--menu-desc-memory ()
+  "Return memory transient description."
+  (jcode--menu-feature-description "memory" "memory"))
+
+(defun jcode--menu-desc-swarm ()
+  "Return swarm transient description."
+  (jcode--menu-feature-description "swarm" "swarm"))
+
+(defun jcode--menu-desc-review ()
+  "Return autoreview transient description."
+  (jcode--menu-feature-description "review" "autoreview"))
+
+(defun jcode--menu-desc-judge ()
+  "Return autojudge transient description."
+  (jcode--menu-feature-description "judge" "autojudge"))
+
 (defun jcode--menu-chat ()
   "Return the current jcode chat buffer."
   (or (and (derived-mode-p 'jcode-chat-mode) (current-buffer))
@@ -82,6 +139,14 @@ and set_compaction_mode.")
 (defun jcode-native-request-current (type &rest fields)
   "Send native request TYPE with FIELDS for the current session."
   (apply #'jcode-native--request (jcode--menu-connection) type fields))
+
+(defun jcode--set-current-display-metadata (&rest fields)
+  "Set display metadata FIELDS on the current chat/input pair."
+  (let* ((chat (jcode--menu-chat))
+         (input (and (buffer-live-p chat)
+                     (buffer-local-value 'jcode--input-buffer chat))))
+    (dolist (buffer (delq nil (list chat input)))
+      (apply #'jcode--set-display-metadata buffer fields))))
 
 (defun jcode-compact ()
   "Trigger manual native jcode context compaction."
@@ -129,6 +194,7 @@ An empty TITLE clears the custom title."
   (interactive)
   (let ((choice (or mode (completing-read "Compaction mode: " jcode-compaction-modes nil t))))
     (jcode-native-request-current "set_compaction_mode" :mode choice)
+    (jcode--set-current-display-metadata :compaction-mode choice)
     (message "Jcode: compaction mode %s" choice)))
 
 (defun jcode-select-transport (&optional transport)
@@ -136,6 +202,7 @@ An empty TITLE clears the custom title."
   (interactive)
   (let ((choice (or transport (completing-read "Transport: " jcode-transport-modes nil t))))
     (jcode-native-request-current "set_transport" :transport choice)
+    (jcode--set-current-display-metadata :transport choice)
     (message "Jcode: transport %s" choice)))
 
 (defun jcode-select-premium-mode (&optional mode)
@@ -145,6 +212,7 @@ An empty TITLE clears the custom title."
          (value (cdr (assoc choice jcode-premium-modes))))
     (unless value (user-error "Unknown premium mode: %s" choice))
     (jcode-native-request-current "set_premium_mode" :mode value)
+    (jcode--set-current-display-metadata :premium-mode choice)
     (message "Jcode: premium mode %s" choice)))
 
 (defun jcode-set-feature (feature enabled)
@@ -152,8 +220,34 @@ An empty TITLE clears the custom title."
   (interactive
    (list (completing-read "Feature: " jcode-feature-toggles nil t)
          (y-or-n-p "Enable feature? ")))
-  (jcode-native-request-current "set_feature" :feature feature :enabled (and enabled t))
-  (message "Jcode: %s %s" feature (if enabled "on" "off")))
+  (let ((state (if enabled "on" "off"))
+        (states (copy-alist (let ((chat (jcode--menu-chat)))
+                              (with-current-buffer chat
+                                jcode--display-feature-states)))))
+    (setf (alist-get feature states nil nil #'equal) state)
+    (jcode-native-request-current "set_feature" :feature feature :enabled (and enabled t))
+    (jcode--set-current-display-metadata :feature-states states)
+    (message "Jcode: %s %s" feature state)))
+
+(defun jcode-select-memory-state ()
+  "Select native jcode memory feature state."
+  (interactive)
+  (jcode-select-feature-state "memory"))
+
+(defun jcode-select-swarm-state ()
+  "Select native jcode swarm feature state."
+  (interactive)
+  (jcode-select-feature-state "swarm"))
+
+(defun jcode-select-review-state ()
+  "Select native jcode autoreview feature state."
+  (interactive)
+  (jcode-select-feature-state "autoreview"))
+
+(defun jcode-select-judge-state ()
+  "Select native jcode autojudge feature state."
+  (interactive)
+  (jcode-select-feature-state "autojudge"))
 
 (defun jcode-select-feature-state (&optional feature state)
   "Select native jcode FEATURE STATE, where state is on or off."
@@ -268,20 +362,30 @@ An empty TITLE clears the custom title."
     ("C" "clear" jcode-clear)]
    ["Context"
     ("x" "compact" jcode-compact)
-    ("m" "compaction mode" jcode-select-compaction-mode)
+    ("-c" "compaction" jcode-select-compaction-mode
+     :description jcode--menu-desc-compaction)
     ("t" "transfer handoff" jcode-transfer)
     ("s" "split" jcode-split)
     ("M" "extract memory" jcode-trigger-memory-extraction)]
    ["Model"
     ("o" "model" jcode-select-model)
-    ("e" "effort" jcode-select-reasoning-effort)
-    ("f" "fast tier" jcode-select-fast-mode)
-    ("T" "transport" jcode-select-transport)]
+    ("-e" "effort" jcode-select-reasoning-effort
+     :description jcode--menu-desc-effort)
+    ("-f" "fast" jcode-select-fast-mode
+     :description jcode--menu-desc-fast)
+    ("-T" "transport" jcode-select-transport
+     :description jcode--menu-desc-transport)]
    ["Features"
-    ("F" "feature on/off" jcode-select-feature-state)
-    ("+" "enable feature" jcode-enable-feature)
-    ("-" "disable feature" jcode-disable-feature)
-    ("p" "premium mode" jcode-select-premium-mode)]])
+    ("-m" "memory" jcode-select-memory-state
+     :description jcode--menu-desc-memory)
+    ("-w" "swarm" jcode-select-swarm-state
+     :description jcode--menu-desc-swarm)
+    ("-r" "review" jcode-select-review-state
+     :description jcode--menu-desc-review)
+    ("-j" "judge" jcode-select-judge-state
+     :description jcode--menu-desc-judge)
+    ("-p" "premium" jcode-select-premium-mode
+     :description jcode--menu-desc-premium)]])
 
 (jcode--install-slash-command-capf-in-live-buffers)
 
