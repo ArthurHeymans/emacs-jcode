@@ -16,6 +16,13 @@
   :type 'natnum
   :group 'jcode)
 
+(defcustom jcode-tool-show-preview-lines 0
+  "Number of tool output lines shown by default in collapsed tool blocks.
+The native jcode TUI defaults to compact tool rows rather than showing output;
+the default of 0 matches that behavior.  Expanding the block shows full output."
+  :type 'natnum
+  :group 'jcode)
+
 (defun jcode--sanitize-text (text)
   "Strip terminal control sequences and undesirable control chars from TEXT."
   (when text
@@ -109,14 +116,58 @@
         (format "%s\n%s\n%s\n" fence (string-trim-right text) fence))
     ""))
 
-(defun jcode--tool-preview (text)
-  "Return (PREVIEW . HIDDEN-COUNT) for tool output TEXT."
-  (let* ((lines (and text (split-string (string-trim-right text) "\n")))
-         (count (length lines)))
-    (if (and lines (> count jcode-tool-preview-lines))
-        (cons (string-join (seq-take lines jcode-tool-preview-lines) "\n")
-              (- count jcode-tool-preview-lines))
+(defun jcode--tool-lines (text)
+  "Return non-empty output lines for TEXT."
+  (if (and text (not (string-empty-p (string-trim text))))
+      (split-string (string-trim-right text) "\n")
+    nil))
+
+(defun jcode--tool-preview (text &optional max-lines)
+  "Return (PREVIEW . HIDDEN-COUNT) for tool output TEXT.
+MAX-LINES defaults to `jcode-tool-preview-lines'."
+  (let* ((lines (jcode--tool-lines text))
+         (count (length lines))
+         (max-lines (or max-lines jcode-tool-preview-lines)))
+    (if (and lines (> count max-lines))
+        (cons (string-join (seq-take lines max-lines) "\n")
+              (- count max-lines))
       (cons text 0))))
+
+(defun jcode--tool-status-icon-face (status text)
+  "Return (ICON . FACE) for tool STATUS and output TEXT."
+  (let ((status (downcase (or status "")))
+        (text (or text "")))
+    (cond
+     ((or (string-match-p "\(?:error\|fail\|failed\)" status)
+          (string-prefix-p "Error:" text))
+      (cons "✗" 'jcode-tool-error-face))
+     ((string-match-p "\(?:running\|start\|update\|pending\)" status)
+      (cons "◌" 'jcode-tool-running-face))
+     ((string-match-p "\(?:warn\|partial\)" status)
+      (cons "⚠" 'jcode-tool-warning-face))
+     (t (cons "✓" 'jcode-tool-success-face)))))
+
+(defun jcode--tool-output-token-badge (text)
+  "Return (LABEL . FACE) approximating the TUI tool token badge for TEXT."
+  (let* ((chars (length (or text "")))
+         (tokens (max 1 (/ (+ chars 3) 4))))
+    (cons (cond
+           ((>= tokens 1000000) (format "%.1fM" (/ tokens 1000000.0)))
+           ((>= tokens 1000) (format "%.1fk" (/ tokens 1000.0)))
+           (t (number-to-string tokens)))
+          (cond
+           ((>= tokens 20000) 'jcode-tool-error-face)
+           ((>= tokens 8000) 'jcode-tool-warning-face)
+           (t 'jcode-tool-face)))))
+
+(defun jcode--tool-summary (_name status text)
+  "Return a compact TUI-like summary for tool STATUS and TEXT."
+  (let ((lines (length (jcode--tool-lines text))))
+    (cond
+     ((and status (string-match-p "\(?:running\|start\|update\|pending\)" (downcase status)))
+      status)
+     ((> lines 0) (format "%d line%s hidden" lines (if (= lines 1) "" "s")))
+     (t status))))
 
 (defun jcode--insert-tool-toggle-button (label overlay)
   "Insert a clickable LABEL linked to tool block OVERLAY."
@@ -134,18 +185,20 @@
   (let* ((header-end (overlay-get overlay 'jcode-header-end))
          (text (or (overlay-get overlay 'jcode-full-text) ""))
          (collapsed (overlay-get overlay 'jcode-collapsed))
-         (preview (jcode--tool-preview text))
+         (preview (jcode--tool-preview text jcode-tool-show-preview-lines))
          (display-text (if collapsed (car preview) text))
          (hidden (cdr preview))
          (inhibit-read-only t))
     (save-excursion
       (goto-char header-end)
       (delete-region header-end (overlay-end overlay))
-      (insert (jcode--tool-block-body display-text))
-      (when (> hidden 0)
+      (unless (or (not display-text) (string-empty-p display-text))
+        (insert (jcode--tool-block-body display-text)))
+      (when (or (> hidden 0) (and collapsed (jcode--tool-lines text)))
         (jcode--insert-tool-toggle-button
          (if collapsed
-             (format "▸ %d more lines hidden, click or TAB to expand\n" hidden)
+             (format "    ▸ output hidden%s, click or TAB to expand\n"
+                     (if (> hidden 0) (format " · %d more line%s" hidden (if (= hidden 1) "" "s")) ""))
            "▾ collapse tool output\n")
          overlay))
       (move-overlay overlay (overlay-start overlay) (point)))))
@@ -174,11 +227,23 @@
         (unless (bolp) (insert "\n"))
         (insert "\n")
         (let ((start (point)))
-          (insert (propertize name 'font-lock-face 'jcode-tool-face)
-                  (propertize (format " %s\n" status) 'font-lock-face 'jcode-dim-face))
+          (let* ((icon-face (jcode--tool-status-icon-face status text))
+                 (badge (jcode--tool-output-token-badge text))
+                 (summary (jcode--tool-summary name status text)))
+            (insert "  "
+                    (propertize (car icon-face) 'font-lock-face (cdr icon-face))
+                    " "
+                    (propertize name 'font-lock-face 'jcode-tool-face))
+            (when (and summary (not (string-empty-p summary)))
+              (insert (propertize " " 'font-lock-face 'jcode-dim-face)
+                      (propertize summary 'font-lock-face 'jcode-dim-face)))
+            (when (jcode--tool-lines text)
+              (insert (propertize " · " 'font-lock-face 'jcode-dim-face)
+                      (propertize (car badge) 'font-lock-face (cdr badge))))
+            (insert "\n"))
           (let* ((header-end (point-marker))
-                 (preview (jcode--tool-preview text))
-                 (collapsed (> (cdr preview) 0))
+                 (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
+                 (collapsed (and (jcode--tool-lines text) t))
                  (overlay (make-overlay start (point) nil nil nil)))
             (overlay-put overlay 'jcode-tool-block t)
             (overlay-put overlay 'jcode-header-end header-end)

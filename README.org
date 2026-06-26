@@ -15,8 +15,8 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 - =jcode-current= to reconnect to the latest session for the current project
 - Pi-like header line with current session/status/model/project metadata
 - tree-sitter markdown rendering for chat buffers via =md-ts-mode= when available, with hidden markup like Pi
-- native jcode-inspired chat palette: off-white body text, amber headings, gray code blocks, blue links, and dim metadata
-- collapsible tool blocks with short previews; press =TAB= or click the indicator to expand/collapse
+- native jcode TUI palette: user blue, assistant green, tools gray, accent purple, dim metadata, and green/red/amber/cyan tool status icons
+- compact tool rows by default, like the TUI; output is hidden until =TAB= or click expands it
 - previous-session opening replays history by default so old chats are visible
 - =session/update= rendering for assistant/user chunks and tool updates
 - TRAMP-aware ACP process launching via =start-file-process=
