@@ -65,6 +65,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defface jcode-tool-running-face '((t :foreground "#50c8dc")) "Native jcode running tool face." :group 'jcode)
 (defface jcode-tool-block-face '((t :extend t)) "Tool block overlay face. Intentionally background-free like the TUI transcript." :group 'jcode)
 (defface jcode-collapsed-face '((t :inherit jcode-dim-face :slant italic)) "Collapsed content indicator face." :group 'jcode)
+(defface jcode-diff-file-face '((t :foreground "#78b4f0" :weight bold)) "Face for diff file headers." :group 'jcode)
+(defface jcode-diff-hunk-face '((t :foreground "#ba8bff" :weight bold)) "Face for diff hunk headers." :group 'jcode)
+(defface jcode-diff-added-face '((t :foreground "#81c784" :background "#1f3324" :extend t)) "Face for added diff lines." :group 'jcode)
+(defface jcode-diff-removed-face '((t :foreground "#e57373" :background "#3a2424" :extend t)) "Face for removed diff lines." :group 'jcode)
+(defface jcode-diff-context-face '((t :foreground "#b4b4b4")) "Face for unchanged diff context lines." :group 'jcode)
 (defface jcode-error-face '((t :inherit error)) "Error face." :group 'jcode)
 
 (defvar-local jcode--session nil)
@@ -580,7 +585,23 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
 
 (defun jcode--section (buffer title face)
   "Append a section TITLE to BUFFER using FACE."
-  (jcode--append buffer (format "\n%s\n%s\n" title (make-string (length title) ?=)) face))
+  (jcode--append-to-buffer-preserving-scroll
+   buffer
+   (lambda ()
+     (let* ((needs-separator (and (equal title "You") (> (point-max) (point-min))))
+            (prefix (cond
+                     ((not needs-separator) "")
+                     ((save-excursion
+                        (goto-char (point-max))
+                        (looking-back "\n\n" (max (point-min) (- (point-max) 2))))
+                      "")
+                     ((save-excursion
+                        (goto-char (point-max))
+                        (looking-back "\n" (max (point-min) (1- (point-max)))))
+                      "\n")
+                     (t "\n\n")))
+            (text (format "%s%s\n%s\n" prefix title (make-string (length title) ?=))))
+       (insert (if face (propertize text 'face face) text))))))
 
 (provide 'jcode-ui)
 ;;; jcode-ui.el ends here

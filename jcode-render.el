@@ -10,6 +10,7 @@
 (require 'button)
 (require 'seq)
 (require 'cl-lib)
+(require 'diff-mode)
 
 (declare-function jcode-session-chat-buffer "jcode-acp")
 
@@ -211,18 +212,26 @@ the native TUI's inline-diff expansion behavior."
       'diff
     'code))
 
+(defun jcode--fontify-diff-buffer ()
+  "Apply diff-mode syntax highlighting in the current temp buffer."
+  (let ((inhibit-read-only t))
+    (delay-mode-hooks (diff-mode))
+    (font-lock-ensure (point-min) (point-max))))
+
 (defun jcode--propertize-diff-body (body)
-  "Apply native-TUI-inspired add/delete faces to diff BODY."
+  "Apply diff-mode and native-TUI-inspired faces to diff BODY."
   (with-temp-buffer
     (insert body)
+    (jcode--fontify-diff-buffer)
     (goto-char (point-min))
     (while (not (eobp))
       (let ((face (cond
-                   ((looking-at-p "^+[^+]") 'jcode-tool-success-face)
-                   ((looking-at-p "^-[^-]") 'jcode-tool-error-face)
-                   ((looking-at-p "^@@") 'jcode-accent-face)
-                   ((looking-at-p "^\\(?:diff --git\\|--- \\|+++ \\|\\*\\*\\* \\|---\\|+++\\)")
-                    'jcode-dim-face))))
+                   ((looking-at-p "^+[^+]") 'jcode-diff-added-face)
+                   ((looking-at-p "^-[^-]") 'jcode-diff-removed-face)
+                   ((looking-at-p "^@@") 'jcode-diff-hunk-face)
+                   ((looking-at-p "^\\(?:diff --git\\|index \\|--- \\|+++ \\|\\*\\*\\* \\|---\\|+++\\)")
+                    'jcode-diff-file-face)
+                   ((looking-at-p "^ ") 'jcode-diff-context-face))))
         (when face
           (add-text-properties (line-beginning-position) (line-end-position)
                                `(font-lock-face ,face))))
