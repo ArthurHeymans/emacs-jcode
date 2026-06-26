@@ -234,10 +234,9 @@
                                     (input . ((patch_text . ,patch)))))
           (with-current-buffer chat
             (should (string-match-p (regexp-quote "(+1 -1)") (buffer-string)))
-            (should-not (string-match-p "old" (buffer-string)))
+            (should (string-match-p "old" (buffer-string)))
             (goto-char (point-min))
             (search-forward "edit")
-            (jcode-toggle-block)
 	            (should (string-match-p "┌─ diff" (buffer-string)))
 	            (search-forward "+new")
 	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
@@ -252,6 +251,30 @@
 	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
 	                        'jcode-diff-file-face))))
 	      (kill-buffer chat))))
+
+(ert-deftest jcode-edit-update-renders-synthetic-diff-expanded ()
+  (let ((chat (generate-new-buffer " *jcode-test-edit-update-diff-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((title . "edit update")
+                                    (status . "done")
+                                    (output . "updated")
+                                    (input . ((file_path . "foo.el")
+                                              (old_string . "(message \"old\")")
+                                              (new_string . "(message \"new\")"))))
+                             t)
+          (with-current-buffer chat
+            (should (string-match-p (regexp-quote "✓ edit foo.el (+1 -1)") (buffer-string)))
+            (should (string-match-p "┌─ diff" (buffer-string)))
+            (should (string-match-p "--- foo.el" (buffer-string)))
+            (search-forward "-(message \"old\")")
+            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
+                        'jcode-diff-removed-face))
+            (search-forward "+(message \"new\")")
+            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
+                        'jcode-diff-added-face))))
+      (kill-buffer chat))))
 
 (ert-deftest jcode-render-user-inserts-blank-line-before-new-user-turn ()
   (let ((chat (generate-new-buffer " *jcode-test-user-spacing-chat*")))

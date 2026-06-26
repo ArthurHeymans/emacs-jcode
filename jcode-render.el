@@ -30,7 +30,7 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
   "Monotonic counter for jcode tool block ids in the current chat buffer.")
 
 (defconst jcode--edit-tool-names
-  '("apply_patch" "patch" "edit" "write" "multiedit")
+  '("apply_patch" "patch" "edit" "edit update" "write" "multiedit")
   "Tool names whose input/output should be presented as code changes.")
 
 (defun jcode--sanitize-text (text)
@@ -171,13 +171,38 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
 
 (defun jcode--edit-tool-name-p (name)
   "Return non-nil when NAME is an edit/apply/write tool."
-  (member (downcase (format "%s" name)) jcode--edit-tool-names))
+  (let ((normalized (downcase (replace-regexp-in-string
+                               "[_-]+" " " (format "%s" name)))))
+    (or (member normalized jcode--edit-tool-names)
+        (string-match-p
+         (rx word-start (or "edit" "patch" "write" "multiedit") word-end)
+         normalized))))
+
+(defun jcode--diff-line-prefix (prefix text)
+  "Prefix every line in TEXT with PREFIX for synthetic diff display."
+  (mapconcat (lambda (line) (concat prefix line))
+             (split-string (or text "") "\n")
+             "\n"))
+
+(defun jcode--synthetic-edit-diff (input)
+  "Return a synthetic diff from edit INPUT when no patch text is present."
+  (let ((path (or (jcode--tool-input-string input 'file_path)
+                  (jcode--tool-input-string input 'path)
+                  "edited file"))
+        (old (jcode--tool-input-string input 'old_string))
+        (new (jcode--tool-input-string input 'new_string)))
+    (when (and old new)
+      (format "--- %s\n+++ %s\n@@\n%s\n%s"
+              path path
+              (jcode--diff-line-prefix "-" old)
+              (jcode--diff-line-prefix "+" new)))))
 
 (defun jcode--tool-input-patch-text (input)
   "Return patch text embedded in tool INPUT, when present."
   (or (jcode--tool-input-string input 'patch_text)
       (jcode--tool-input-string input 'patch)
-      (jcode--tool-input-string input 'diff)))
+      (jcode--tool-input-string input 'diff)
+      (jcode--synthetic-edit-diff input)))
 
 (defun jcode--tool-display-text (name output input)
   "Return preferred expanded display text for tool NAME with OUTPUT and INPUT.
@@ -370,9 +395,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 (defun jcode--tool-display-name (name)
   "Return TUI-like display name for tool NAME."
   (let ((name (or name "tool")))
-    (pcase name
-      ((or "apply_patch" "patch") "edit")
-      ("multiedit" "edit")
+    (pcase (downcase (replace-regexp-in-string "[_-]+" " " (format "%s" name)))
+      ((or "apply patch" "apply_patch" "patch" "edit update") "edit")
+      ((or "multiedit" "multi edit") "edit")
       ("webfetch" "web")
       ("websearch" "search")
       (_ name))))
@@ -507,7 +532,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
               (short (file-name-nondirectory file))
               (line (or (jcode--tool-input-string input 'line) "0")))
          (format "%s %s:%s" op short line)))
-      (_ nil))))
+      (_ (and (jcode--edit-tool-name-p name)
+              (or (jcode--tool-input-string input 'file_path)
+                  (jcode--tool-input-string input 'path)))))))
 
 (defun jcode--tool-summary (name status text input intent)
   "Return a compact TUI-like tool summary."
@@ -614,8 +641,10 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 	       (badge (jcode--tool-output-token-badge (or raw-output text)))
 	       (display-name (jcode--tool-display-name name))
 	       (summary (jcode--tool-summary name status text input intent))
-	       (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
-	       (collapsed (and (jcode--tool-lines text) t))
+               (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
+               (body-kind (jcode--tool-body-kind name text))
+               (collapsed (and (jcode--tool-lines text)
+                               (not (eq body-kind 'diff))))
 	       (overlay (make-overlay start start nil nil nil))
 	       (id (cl-incf jcode--tool-block-counter)))
 	    (overlay-put overlay 'jcode-tool-block t)
@@ -625,7 +654,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 	    (overlay-put overlay 'jcode-display-name display-name)
 	    (overlay-put overlay 'jcode-summary summary)
 	    (overlay-put overlay 'jcode-full-text (or text ""))
-	    (overlay-put overlay 'jcode-body-kind (jcode--tool-body-kind name text))
+            (overlay-put overlay 'jcode-body-kind body-kind)
 	    (overlay-put overlay 'jcode-collapsed collapsed)
 	    ;; Background only, so markdown/code syntax foregrounds survive.
 	    (overlay-put overlay 'face 'jcode-tool-block-face)
