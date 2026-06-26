@@ -1267,6 +1267,37 @@
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-resume-reuses-lazy-project-buffer-and-stamps-session-id ()
+  (let* ((dir default-directory)
+         (buffers (jcode--make-buffers dir nil))
+         (chat (car buffers))
+         (input (cdr buffers))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id nil :cwd dir))
+         displayed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode--session-info-by-id)
+                   (lambda (session-id &optional _directory)
+                     (jcode--make-session-info
+                      :id session-id :short-name "lazy" :working-dir dir)))
+                  ((symbol-function 'jcode-list-sessions-data)
+                   (lambda (&optional _directory) nil))
+                  ((symbol-function 'jcode--display-buffers)
+                   (lambda (shown-chat shown-input)
+                     (setq displayed (cons shown-chat shown-input)))))
+          (with-current-buffer chat
+            (setq jcode--display-session-id nil
+                  jcode--native-connection connection))
+          (with-current-buffer input
+            (setq jcode--native-connection connection))
+          (should (eq (jcode-resume "s-lazy") chat))
+          (should (equal displayed (cons chat input)))
+          (with-current-buffer chat
+            (should (equal jcode--display-session-id "s-lazy")))
+          (should (equal (jcode-native-connection-session-id connection) "s-lazy")))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-menu-and-slash-commands-are-wired ()
   (should (commandp #'jcode-menu))
   (should (eq (lookup-key jcode-input-mode-map (kbd "C-c C-p")) #'jcode-menu))
@@ -1804,6 +1835,24 @@
           (jcode--annotate-session-runtime (list info) "/ssh:example:/tmp/project/")
           (let ((columns (cadr (jcode--session-list-entry info))))
             (should (equal (aref columns 2) "remote ssh:example"))
+            (should (equal (aref columns 3) "Emacs owned native"))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-session-list-entry-matches-lazy-live-buffer-by-working-dir ()
+  (let* ((dir (file-name-as-directory default-directory))
+         (chat (generate-new-buffer " *jcode-test-list-lazy-chat*"))
+         (info (jcode--make-session-info
+                :id "s-lazy-list" :short-name "lazy-list" :status "Active"
+                :working-dir dir)))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq default-directory dir
+                  jcode--display-session-id nil)
+            (jcode--set-display-metadata chat :owner 'owned :connection-type "native"))
+          (jcode--annotate-session-runtime (list info) dir)
+          (let ((columns (cadr (jcode--session-list-entry info))))
             (should (equal (aref columns 3) "Emacs owned native"))))
       (kill-buffer chat))))
 

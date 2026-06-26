@@ -234,31 +234,39 @@ because they can correspond to currently open Emacs/TUI windows."
       (format "remote %s" (string-remove-suffix ":" (string-remove-prefix "/" remote)))
     "local"))
 
-(defun jcode--session-live-client-label (session-id)
-  "Return connected client label for live SESSION-ID buffers, or nil."
+(defun jcode--session-live-client-label (info)
+  "Return connected client label for live session INFO buffers, or nil.
+Lazy-created native buffers may not know their daemon session id yet; in that
+case, fall back to matching the session working directory."
   (catch 'label
-    (dolist (buffer (buffer-list))
-      (with-current-buffer buffer
-        (when (and (boundp 'jcode--display-session-id)
-                   (equal jcode--display-session-id session-id)
-                   (derived-mode-p 'jcode-chat-mode))
-          (let* ((owner (pcase jcode--display-owner
-                          ('owned "owned")
-                          ('viewing "viewing")
-                          ((and (pred stringp) s) s)
-                          (_ nil)))
-                 (transport (and (stringp jcode--display-connection-type)
-                                 (not (string-empty-p jcode--display-connection-type))
-                                 jcode--display-connection-type)))
-            (throw 'label
-                   (string-join (delq nil (list "Emacs" owner transport)) " "))))))))
+    (let ((session-id (jcode-session-info-id info))
+          (working-dir (jcode-session-info-working-dir info)))
+      (dolist (buffer (buffer-list))
+        (with-current-buffer buffer
+          (when (and (derived-mode-p 'jcode-chat-mode)
+                     (or (and (boundp 'jcode--display-session-id)
+                              (equal jcode--display-session-id session-id))
+                         (and (not (bound-and-true-p jcode--display-session-id))
+                              (stringp working-dir)
+                              (string= (file-name-as-directory (expand-file-name default-directory))
+                                       (file-name-as-directory (expand-file-name working-dir))))))
+            (let* ((owner (pcase jcode--display-owner
+                            ('owned "owned")
+                            ('viewing "viewing")
+                            ((and (pred stringp) s) s)
+                            (_ nil)))
+                   (transport (and (stringp jcode--display-connection-type)
+                                   (not (string-empty-p jcode--display-connection-type))
+                                   jcode--display-connection-type)))
+              (throw 'label
+                     (string-join (delq nil (list "Emacs" owner transport)) " ")))))))))
 
 (defun jcode--annotate-session-runtime (sessions directory)
   "Annotate SESSIONS with runtime location and live client metadata."
   (let ((location (jcode--session-location-label directory)))
     (dolist (info sessions)
       (setf (jcode-session-info-location info) location)
-      (when-let ((client (jcode--session-live-client-label (jcode-session-info-id info))))
+      (when-let ((client (jcode--session-live-client-label info)))
         (setf (jcode-session-info-client info) client)))
     sessions))
 

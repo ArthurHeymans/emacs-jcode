@@ -87,15 +87,26 @@ Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
 (defun jcode--buffer-pair-for-session-id (session-id)
   "Return an existing live jcode buffer pair for SESSION-ID, if any."
   (catch 'pair
-    (dolist (chat (buffer-list))
-      (when (and (buffer-live-p chat)
-                 (with-current-buffer chat
-                   (and (derived-mode-p 'jcode-chat-mode)
-                        (equal jcode--display-session-id session-id))))
-        (when-let ((input (or (buffer-local-value 'jcode--input-buffer chat)
-                              (jcode--input-buffer-for-chat chat))))
-          (when (buffer-live-p input)
-            (throw 'pair (cons chat input))))))))
+    (let* ((info (ignore-errors (jcode--session-info-by-id session-id (jcode--project-directory))))
+           (working-dir (and info (jcode-session-info-working-dir info))))
+      (dolist (chat (buffer-list))
+        (when (and (buffer-live-p chat)
+                   (with-current-buffer chat
+                     (and (derived-mode-p 'jcode-chat-mode)
+                          (or (equal jcode--display-session-id session-id)
+                              (and (not jcode--display-session-id)
+                                   (stringp working-dir)
+                                   (string= (jcode--normalize-directory default-directory)
+                                            (jcode--normalize-directory working-dir)))))))
+          (when-let ((input (or (buffer-local-value 'jcode--input-buffer chat)
+                                (jcode--input-buffer-for-chat chat))))
+            (when (buffer-live-p input)
+              (jcode-apply-session-info-to-buffers session-id chat input)
+              (dolist (buffer (list chat input))
+                (jcode--set-display-metadata buffer :session-id session-id))
+              (when-let ((native (buffer-local-value 'jcode--native-connection chat)))
+                (setf (jcode-native-connection-session-id native) session-id))
+              (throw 'pair (cons chat input)))))))))
 
 (defun jcode-project-buffers (&optional directory)
   "Return live jcode chat buffers for DIRECTORY's project.
