@@ -302,6 +302,32 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
     (user-error "No session at point"))
   (tabulated-list-put-tag " " t))
 
+(defun jcode-list-unmark-backward ()
+  "Move to the previous row and unmark it."
+  (interactive)
+  (forward-line -1)
+  (jcode-list-unmark))
+
+(defun jcode-list-unmark-all ()
+  "Unmark all marked sessions."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (when (eq (char-after (line-beginning-position)) ?*)
+        (tabulated-list-put-tag " " nil))
+      (forward-line 1)))
+  (message "Jcode: unmarked all sessions"))
+
+(defun jcode-list-toggle-mark ()
+  "Toggle the mark on the session at point and move to the next row."
+  (interactive)
+  (unless (tabulated-list-get-id)
+    (user-error "No session at point"))
+  (tabulated-list-put-tag
+   (if (eq (char-after (line-beginning-position)) ?*) " " "*")
+   t))
+
 (defun jcode-list-marked-session-ids ()
   "Return marked session ids in the current `jcode-list-mode' buffer."
   (let (ids)
@@ -410,9 +436,15 @@ With prefix argument RESUME-ONLY, attach without replay."
 
 (defvar jcode-list-mode-map
   (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
     (define-key map (kbd "g") #'jcode-list-refresh)
     (define-key map (kbd "m") #'jcode-list-mark)
+    (define-key map (kbd "*") #'jcode-list-mark)
     (define-key map (kbd "u") #'jcode-list-unmark)
+    (define-key map (kbd "DEL") #'jcode-list-unmark-backward)
+    (define-key map (kbd "<backspace>") #'jcode-list-unmark-backward)
+    (define-key map (kbd "U") #'jcode-list-unmark-all)
+    (define-key map (kbd "t") #'jcode-list-toggle-mark)
     (define-key map (kbd "d") #'jcode-list-delete-session)
     (define-key map (kbd "x") #'jcode-list-delete-marked-sessions)
     (define-key map (kbd "O") #'jcode-list-open-marked-sessions)

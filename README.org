@@ -45,7 +45,7 @@ Commands:
 - =C-u M-x jcode-current= resumes the globally latest known session.
 - =M-x jcode-connect=, also =M-x jcode-attach=, connects to a session through the native socket and requests takeover for live updates.
 - =M-x jcode-reconnect= from a jcode chat/input reconnects the current session with native takeover, useful after another UI client owns the stream.
-- =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay, =r= to resume without replay, =m=/=u= to mark/unmark, =O= to open marked sessions, =d= to delete the session at point, =x= to delete marked sessions, or =P= to prune closed empty session files.
+- =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay, =r= to resume without replay, =m= or =*= to mark, =u= to unmark, =DEL= to unmark previous, =U= to unmark all, =t= to toggle a mark, =O= to open marked sessions, =d= to delete the session at point, =x= to delete marked sessions, or =P= to prune closed empty session files.
 - =M-x jcode-resume= picks a session id and resumes without full replay.
 - =C-u M-x jcode-resume= loads with history replay.
 - =M-x jcode-plan= opens the implementation plan.
