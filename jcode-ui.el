@@ -148,18 +148,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defun jcode--header-owner ()
   "Return ownership/client status text for the header."
   (let ((owner (pcase jcode--display-owner
-                 ('owned "owner Emacs")
-                 ('viewing "viewing")
-                 ((and (pred stringp) s) s)
-                 (_ nil)))
-        (clients (and (numberp jcode--display-client-count)
-                      (> jcode--display-client-count 0)
-                      (format "clients %s" jcode--display-client-count))))
-    (cond
-     ((and owner clients) (format " │ %s %s" owner clients))
-     (owner (format " │ %s" owner))
-     (clients (format " │ %s" clients))
-     (t ""))))
+		 ('owned "owned")
+		 ('viewing "viewing")
+		 ((and (pred stringp) s) s)
+		 (_ nil))))
+    (if owner (format " │ %s" owner) "")))
 
 (defun jcode--header-token-values ()
   "Return (INPUT OUTPUT CACHE-READ) token values for the header."
@@ -178,22 +171,22 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defun jcode--header-context ()
   "Return current/max context usage text for the header."
   (pcase-let ((`(,input _ ,_) (jcode--header-token-values)))
-    (if input
-        (format " │ context %s/%s"
-                (jcode--format-token-count input)
-                (jcode--format-token-count jcode--display-context-window))
+    (if (and input (numberp jcode--display-context-window))
+	(format " │ context %s/%s"
+		(jcode--format-token-count input)
+		(jcode--format-token-count jcode--display-context-window))
       "")))
 
 (defun jcode--header-session-usage ()
   "Return explicit session token usage text for the header."
   (pcase-let ((`(_ ,output ,cache-read) (jcode--header-token-values)))
-    (concat
-     (if output
-         (format " │ session output %s" (jcode--format-token-count output))
-       "")
-     (if (and cache-read (> cache-read 0))
-         (format " cached %s" (jcode--format-token-count cache-read))
-       ""))))
+	(concat
+	 (if output
+	     (format " │ tokens out %s" (jcode--format-token-count output))
+	   "")
+	 (if (and cache-read (> cache-read 0))
+	     (format " cache %s" (jcode--format-token-count cache-read))
+	   ""))))
 
 (defun jcode--header-provider ()
   "Return provider and credential label for the header."
