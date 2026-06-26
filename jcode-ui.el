@@ -164,6 +164,8 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (cond
      ((and (listp activity) (alist-get 'current_tool_name activity))
       (format "tool:%s" (alist-get 'current_tool_name activity)))
+     ((and (listp activity) (alist-get 'phase activity))
+      (format "%s" (alist-get 'phase activity)))
      ((and (listp activity) (eq (alist-get 'is_processing activity) t)) "streaming")
      ((equal jcode--display-status "Active") "live")
      ((equal jcode--display-status "Closed") "closed")
@@ -591,7 +593,7 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
   (jcode--append-to-buffer-preserving-scroll
    buffer
    (lambda ()
-     (let* ((needs-separator (and (equal title "You") (> (point-max) (point-min))))
+     (let* ((needs-separator (> (point-max) (point-min)))
             (prefix (cond
                      ((not needs-separator) "")
                      ((save-excursion

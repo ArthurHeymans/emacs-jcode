@@ -341,26 +341,43 @@ history."
            (jcode-render-error chat error)
          (dolist (buffer (list chat (jcode-native-connection-input connection)))
            (jcode--set-display-metadata buffer :service-tier (or (alist-get 'service_tier event) "off")))))
-      ("reasoning_delta" (jcode-native--mark-busy connection))
+      ("reasoning_delta"
+       (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata buffer :activity '((is_processing . t) (phase . "thinking")))))
       ("text_delta"
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))
-         (jcode--set-display-metadata buffer :activity '((is_processing . t))))
+         (jcode--set-display-metadata buffer :activity '((is_processing . t) (phase . "responding"))))
        (jcode-render-assistant-message chat (alist-get 'text event)))
       ("text_replace"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata buffer :activity '((is_processing . t) (phase . "responding"))))
        (jcode-render-assistant-message chat (alist-get 'text event)))
       ("tool_start"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata
+          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
        (jcode-render-tool chat event nil))
       ("tool_input"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata
+          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
        (jcode-render-tool chat event t))
       ("tool_exec"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata
+          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
        (jcode-render-tool chat event t))
       ("tool_done"
        (jcode-native--mark-busy connection)
+       (dolist (buffer (list chat (jcode-native-connection-input connection)))
+         (jcode--set-display-metadata
+          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
        (jcode-render-tool chat event t))
       ("session_renamed"
        (dolist (buffer (list (jcode-native-connection-chat connection)

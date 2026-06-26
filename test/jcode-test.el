@@ -264,6 +264,17 @@
             (should (string-match-p "Committed: abc\n\nYou\n===" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-render-separates-assistant-section-after-user-turn ()
+  (let ((chat (generate-new-buffer " *jcode-test-assistant-spacing-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-user chat "question")
+          (jcode-render-assistant-message chat "answer")
+          (with-current-buffer chat
+            (should (string-match-p "question\n\nAssistant\n=========" (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-summary-chat*")))
     (unwind-protect
@@ -429,6 +440,26 @@
               (should (string-match-p "fast on" (jcode--header-line))))))
 	      (when (buffer-live-p chat) (kill-buffer chat))
 	      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-activity-events-update-header-labels ()
+  (let ((chat (generate-new-buffer " *jcode-test-activity-chat*"))
+        (input (generate-new-buffer " *jcode-test-activity-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode-native--handle-event connection '((type . "reasoning_delta")))
+            (with-current-buffer input
+              (should (string-match-p "thinking" (jcode--header-line))))
+            (jcode-native--handle-event connection '((type . "text_delta") (text . "hi")))
+            (with-current-buffer input
+              (should (string-match-p "responding" (jcode--header-line))))
+            (jcode-native--handle-event connection '((type . "tool_start") (name . "bash")))
+            (with-current-buffer input
+              (should (string-match-p "tool:bash" (jcode--header-line))))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
 
 (ert-deftest jcode-header-fast-click-opens-selector ()
   (should (eq (lookup-key jcode--header-fast-map [header-line mouse-1])
