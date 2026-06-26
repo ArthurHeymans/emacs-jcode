@@ -46,26 +46,47 @@
 
 (defun jcode--find-project-files (directory)
   "Return project-relative files in DIRECTORY using pi-style discovery."
-  (let* ((default-directory (file-name-as-directory (expand-file-name directory)))
-         (git-output (and (executable-find "git")
-                          (shell-command-to-string
-                           "git ls-files --cached --others --exclude-standard 2>/dev/null")))
-         (git-files (and git-output
-                         (seq-filter (lambda (file) (not (string-empty-p file)))
-                                     (split-string git-output "\n" t)))))
-    (or git-files
-        (let ((find-command
-               (concat "find . -type f "
-                       (mapconcat (lambda (pattern)
-                                    (format "-not -path '*/%s/*'" pattern))
-                                  jcode--file-exclude-patterns
-                                  " ")
-                       " 2>/dev/null")))
-          (mapcar (lambda (file)
-                    (string-remove-prefix "./" file))
-                  (seq-filter (lambda (file)
-                                (not (string-empty-p file)))
-                              (split-string (shell-command-to-string find-command) "\n" t)))))))
+  (let ((directory (file-name-as-directory (expand-file-name directory))))
+    (or (jcode--git-project-files directory)
+        (jcode--scan-project-files directory))))
+
+(defun jcode--git-project-files (directory)
+  "Return git-tracked project files in DIRECTORY using TRAMP process APIs."
+  (let ((default-directory directory))
+    (with-temp-buffer
+      (when (equal 0 (ignore-errors
+                       (process-file "git" nil t nil
+                                     "ls-files" "--cached" "--others"
+                                     "--exclude-standard")))
+        (seq-filter (lambda (file) (not (string-empty-p file)))
+                    (split-string (buffer-string) "\n" t))))))
+
+(defun jcode--excluded-file-name-p (name)
+  "Return non-nil when NAME is excluded from fallback scans."
+  (member name jcode--file-exclude-patterns))
+
+(defun jcode--scan-project-files (directory)
+  "Return project-relative files in DIRECTORY using Emacs file APIs."
+  (let ((root (file-name-as-directory directory))
+        result)
+    (cl-labels
+        ((scan (dir prefix)
+           (dolist (name (condition-case nil
+                             (directory-files dir nil nil t)
+                           (file-error nil)
+                           (permission-denied nil)))
+             (unless (member name '("." ".."))
+               (let ((full (expand-file-name name dir))
+                     (relative (concat prefix name)))
+                 (cond
+                  ((and (file-directory-p full)
+                        (not (file-symlink-p full))
+                        (not (jcode--excluded-file-name-p name)))
+                   (scan (file-name-as-directory full) (concat relative "/")))
+                  ((file-regular-p full)
+                   (push relative result))))))))
+      (scan root ""))
+    (nreverse result)))
 
 (defun jcode--project-file-candidates ()
   "Return project-relative file candidates for the current buffer."
