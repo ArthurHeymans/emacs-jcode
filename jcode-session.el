@@ -288,6 +288,85 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                 (jcode-list-sessions-data jcode--session-list-directory)))
   (tabulated-list-print t))
 
+(defun jcode-list-mark ()
+  "Mark the session at point and move to the next row."
+  (interactive)
+  (unless (tabulated-list-get-id)
+    (user-error "No session at point"))
+  (tabulated-list-put-tag "*" t))
+
+(defun jcode-list-unmark ()
+  "Unmark the session at point and move to the next row."
+  (interactive)
+  (unless (tabulated-list-get-id)
+    (user-error "No session at point"))
+  (tabulated-list-put-tag " " t))
+
+(defun jcode-list-marked-session-ids ()
+  "Return marked session ids in the current `jcode-list-mode' buffer."
+  (let (ids)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (and (eq (char-after (line-beginning-position)) ?*)
+                   (tabulated-list-get-id))
+          (push (tabulated-list-get-id) ids))
+        (forward-line 1)))
+    (nreverse ids)))
+
+(defun jcode--session-info-by-id (session-id &optional directory)
+  "Return session info for SESSION-ID in DIRECTORY."
+  (cl-find session-id (jcode-list-sessions-data directory)
+           :key #'jcode-session-info-id
+           :test #'string=))
+
+(defun jcode--delete-session-files (session-ids directory)
+  "Delete persisted files for SESSION-IDS in DIRECTORY.
+Return the number of files deleted."
+  (let ((deleted 0))
+    (dolist (session-id session-ids deleted)
+      (when-let* ((info (jcode--session-info-by-id session-id directory))
+                  (file (jcode-session-info-file info)))
+        (delete-file file)
+        (setq deleted (1+ deleted))))))
+
+(defun jcode-list-delete-session ()
+  "Delete the session file at point after confirmation."
+  (interactive)
+  (let ((id (tabulated-list-get-id)))
+    (unless id (user-error "No session at point"))
+    (when (or noninteractive
+              (yes-or-no-p (format "Delete jcode session %s? " id)))
+      (let ((deleted (jcode--delete-session-files (list id) jcode--session-list-directory)))
+        (jcode-list-refresh)
+        (message "Jcode: deleted %d session%s"
+                 deleted (if (= deleted 1) "" "s"))))))
+
+(defun jcode-list-delete-marked-sessions ()
+  "Delete all marked session files after confirmation."
+  (interactive)
+  (let ((ids (jcode-list-marked-session-ids)))
+    (unless ids (user-error "No marked sessions"))
+    (when (or noninteractive
+              (yes-or-no-p (format "Delete %d marked jcode session%s? "
+                                   (length ids)
+                                   (if (= (length ids) 1) "" "s"))))
+      (let ((deleted (jcode--delete-session-files ids jcode--session-list-directory)))
+        (jcode-list-refresh)
+        (message "Jcode: deleted %d session%s"
+                 deleted (if (= deleted 1) "" "s"))))))
+
+(defun jcode-list-open-marked-sessions (&optional resume-only)
+  "Open all marked sessions.
+With prefix argument RESUME-ONLY, attach without history replay."
+  (interactive "P")
+  (let ((ids (jcode-list-marked-session-ids)))
+    (unless ids (user-error "No marked sessions"))
+    (dolist (id ids)
+      (jcode-resume id (not resume-only)))
+    (message "Jcode: opened %d marked session%s"
+             (length ids) (if (= (length ids) 1) "" "s"))))
+
 (defun jcode-prune-empty-sessions (&optional directory)
   "Delete closed empty session files for DIRECTORY.
 This never deletes saved sessions or sessions whose persisted status is Active."
@@ -332,6 +411,11 @@ With prefix argument RESUME-ONLY, attach without replay."
 (defvar jcode-list-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "g") #'jcode-list-refresh)
+    (define-key map (kbd "m") #'jcode-list-mark)
+    (define-key map (kbd "u") #'jcode-list-unmark)
+    (define-key map (kbd "d") #'jcode-list-delete-session)
+    (define-key map (kbd "x") #'jcode-list-delete-marked-sessions)
+    (define-key map (kbd "O") #'jcode-list-open-marked-sessions)
     (define-key map (kbd "P") #'jcode-prune-empty-sessions)
     (define-key map (kbd "RET") #'jcode-list-open)
     (define-key map (kbd "r") (lambda () (interactive) (jcode-list-open t)))

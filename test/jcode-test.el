@@ -699,6 +699,88 @@
           (should (file-exists-p closed-real)))
       (delete-directory root t))))
 
+(ert-deftest jcode-list-mark-unmark-and-open-marked-sessions ()
+  (let* ((root (make-temp-file "jcode-list-marks" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (buf (generate-new-buffer " *jcode-test-list-marks*"))
+         opened)
+    (unwind-protect
+        (progn
+          (write-region
+           "{\"id\":\"one\",\"short_name\":\"one\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+           nil (expand-file-name "one.json" root))
+          (write-region
+           "{\"id\":\"two\",\"short_name\":\"two\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+           nil (expand-file-name "two.json" root))
+          (with-current-buffer buf
+            (jcode-list-mode)
+            (setq jcode--session-list-directory root)
+            (jcode-list-refresh)
+            (goto-char (point-min))
+            (search-forward "one")
+            (beginning-of-line)
+            (jcode-list-mark)
+            (should (equal (jcode-list-marked-session-ids) '("one")))
+            (forward-line -1)
+            (jcode-list-unmark)
+            (should-not (jcode-list-marked-session-ids))
+            (goto-char (point-min))
+            (search-forward "one")
+            (beginning-of-line)
+            (jcode-list-mark)
+            (goto-char (point-min))
+            (search-forward "two")
+            (beginning-of-line)
+            (jcode-list-mark)
+            (cl-letf (((symbol-function 'jcode-resume)
+                       (lambda (id replay) (push (list id replay) opened)))
+                      ((symbol-function 'message) #'ignore))
+              (jcode-list-open-marked-sessions)
+              (should (equal (sort (nreverse opened) (lambda (a b) (string< (car a) (car b))))
+                             '(("one" t) ("two" t)))))))
+      (kill-buffer buf)
+      (delete-directory root t))))
+
+(ert-deftest jcode-list-delete-current-and-marked-session-files ()
+  (let* ((root (make-temp-file "jcode-list-delete" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (buf (generate-new-buffer " *jcode-test-list-delete*"))
+         (one (expand-file-name "one.json" root))
+         (two (expand-file-name "two.json" root))
+         (three (expand-file-name "three.json" root)))
+    (unwind-protect
+        (progn
+          (dolist (spec `((,one . "one") (,two . "two") (,three . "three")))
+            (write-region
+             (format "{\"id\":\"%s\",\"short_name\":\"%s\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+                     (cdr spec) (cdr spec))
+             nil (car spec)))
+          (with-current-buffer buf
+            (jcode-list-mode)
+            (setq jcode--session-list-directory root)
+            (jcode-list-refresh)
+            (goto-char (point-min))
+            (search-forward "one")
+            (beginning-of-line)
+            (cl-letf (((symbol-function 'message) #'ignore))
+              (jcode-list-delete-session))
+            (should-not (file-exists-p one))
+            (should (file-exists-p two))
+            (goto-char (point-min))
+            (search-forward "two")
+            (beginning-of-line)
+            (jcode-list-mark)
+            (goto-char (point-min))
+            (search-forward "three")
+            (beginning-of-line)
+            (jcode-list-mark)
+            (cl-letf (((symbol-function 'message) #'ignore))
+              (jcode-list-delete-marked-sessions))
+            (should-not (file-exists-p two))
+            (should-not (file-exists-p three))))
+      (kill-buffer buf)
+      (delete-directory root t))))
+
 (ert-deftest jcode-native-json-read-parses-history ()
   (let ((event (jcode-native--json-read
                 "{\"type\":\"history\",\"provider_model\":\"gpt\",\"messages\":[{\"role\":\"assistant\",\"content\":\"hello\"}]}")))
