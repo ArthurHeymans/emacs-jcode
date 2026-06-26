@@ -16,8 +16,11 @@
 
 (defvar-local jcode--native-connection nil)
 
-(defconst jcode-native-reasoning-efforts '("none" "low" "medium" "high" "xhigh" "max")
-  "Reasoning effort values cycled from the header.")
+(defconst jcode-native-reasoning-efforts '("none" "low" "medium" "high" "xhigh")
+  "Reasoning effort values cycled from the header.
+
+`max' exists for some providers, but cycling through it can get stuck when a
+provider clamps unsupported `max' back to `xhigh'.")
 
 (defcustom jcode-native-poll-interval 1.0
   "Seconds between native history refreshes for passive session views.

@@ -222,6 +222,25 @@
       (kill-buffer chat)
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-cycle-reasoning-effort-wraps-xhigh-to-none ()
+  (let* ((chat (generate-new-buffer " *jcode-test-reasoning-chat*"))
+         (input (generate-new-buffer " *jcode-test-reasoning-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "reasoning-test" :cwd default-directory))
+         requested)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-native-set-reasoning-effort)
+                   (lambda (_connection effort) (setq requested effort))))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input
+                  jcode--native-connection connection
+                  jcode--display-reasoning-effort "xhigh")
+            (jcode-cycle-reasoning-effort))
+          (should (equal requested "none")))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
   (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
                      jcode-connect jcode-reconnect jcode-attach
