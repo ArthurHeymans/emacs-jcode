@@ -31,7 +31,7 @@ messages, which are commonly created by opening jcode and doing nothing."
 
 (cl-defstruct (jcode-session-info (:constructor jcode--make-session-info))
   id title short-name working-dir status model provider updated-at created-at file
-  last-pid server-name message-count conversation-count saved)
+  last-pid server-name message-count conversation-count user-turn-count saved)
 
 (defvar-local jcode--session-list-directory nil)
 
@@ -43,6 +43,10 @@ messages, which are commonly created by opening jcode and doing nothing."
     ("Updated" 12 t)
     ("Project" 24 t) ]
   "Column format for `jcode-list-mode'.")
+
+(defconst jcode--session-list-help
+  "RET open  r resume  m/* mark  u unmark  U unmark all  t toggle  d delete  x/D delete marked  O open marked  P prune  g refresh  q quit"
+  "Header help text shown in `jcode-list-mode'.")
 
 (defun jcode--remote-prefix (&optional directory)
   "Return TRAMP prefix for DIRECTORY, or nil for local."
@@ -94,6 +98,11 @@ messages, which are commonly created by opening jcode and doing nothing."
     (not (or (equal display-role "system")
              (equal role "system")))))
 
+(defun jcode--user-turn-message-p (message)
+  "Return non-nil if persisted MESSAGE is a real user-sent prompt."
+  (and (jcode--conversation-message-p message)
+       (equal (jcode--safe-alist-get 'role message) "user")))
+
 (defun jcode--session-empty-p (info)
   "Return non-nil if INFO has no real conversation messages.
 Only classify sessions as empty when the persisted file explicitly included a
@@ -120,7 +129,10 @@ message list.  Older/minimal metadata files without messages are kept visible."
                (message-count (and messages-cell (listp messages) (length messages)))
                (conversation-count (and messages-cell (listp messages)
                                         (length (cl-remove-if-not
-                                                 #'jcode--conversation-message-p messages)))))
+                                                 #'jcode--conversation-message-p messages))))
+               (user-turn-count (and messages-cell (listp messages)
+                                     (length (cl-remove-if-not
+                                              #'jcode--user-turn-message-p messages)))))
           (when id
             (jcode--make-session-info
              :id id
@@ -136,6 +148,7 @@ message list.  Older/minimal metadata files without messages are kept visible."
              :last-pid (jcode--safe-alist-get 'last_pid data)
              :message-count message-count
              :conversation-count conversation-count
+             :user-turn-count user-turn-count
              :saved (jcode--safe-alist-get 'saved data)))))
     (error nil)))
 
@@ -237,8 +250,8 @@ string."
 
 (defun jcode--session-turn-count-string (info)
   "Return display turn count for session INFO."
-  (if (numberp (jcode-session-info-conversation-count info))
-      (number-to-string (jcode-session-info-conversation-count info))
+  (if (numberp (jcode-session-info-user-turn-count info))
+      (number-to-string (jcode-session-info-user-turn-count info))
     ""))
 
 (defun jcode-read-session-id (&optional directory prompt)
@@ -291,10 +304,18 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
   (setq tabulated-list-format jcode--session-list-format)
   (setq tabulated-list-sort-key nil)
   (tabulated-list-init-header)
+  (jcode--session-list-apply-header-help)
   (setq tabulated-list-entries
         (mapcar #'jcode--session-list-entry
                 (jcode-list-sessions-data jcode--session-list-directory)))
   (tabulated-list-print t))
+
+(defun jcode--session-list-apply-header-help ()
+  "Show key help alongside the tabulated list header."
+  (setq header-line-format
+        (list (propertize jcode--session-list-help 'face 'jcode-dim-face)
+              "    "
+              header-line-format)))
 
 (defun jcode-list-mark ()
   "Mark the session at point and move to the next row."
@@ -455,6 +476,7 @@ With prefix argument RESUME-ONLY, attach without replay."
     (define-key map (kbd "t") #'jcode-list-toggle-mark)
     (define-key map (kbd "d") #'jcode-list-delete-session)
     (define-key map (kbd "x") #'jcode-list-delete-marked-sessions)
+    (define-key map (kbd "D") #'jcode-list-delete-marked-sessions)
     (define-key map (kbd "O") #'jcode-list-open-marked-sessions)
     (define-key map (kbd "P") #'jcode-prune-empty-sessions)
     (define-key map (kbd "RET") #'jcode-list-open)
@@ -468,7 +490,8 @@ With prefix argument RESUME-ONLY, attach without replay."
   (setq tabulated-list-format jcode--session-list-format)
   (setq tabulated-list-sort-key nil)
   (setq tabulated-list-padding 2)
-  (tabulated-list-init-header))
+  (tabulated-list-init-header)
+  (jcode--session-list-apply-header-help))
 
 (provide 'jcode-session)
 ;;; jcode-session.el ends here

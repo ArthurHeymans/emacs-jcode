@@ -50,7 +50,7 @@ Commands:
 - =C-u M-x jcode-resume= loads with history replay.
 - =M-x jcode-plan= opens the implementation plan.
 
-The input buffer header shows provider/credential, model, reasoning effort, live ownership/client count when known, context usage, and session output/cache usage.  Empty system-only sessions are hidden from pickers by default; use =M-x jcode-prune-empty-sessions=, or =P= in =jcode-list=, to delete closed empty session files explicitly.
+The input buffer header shows provider/credential, model, reasoning effort, live ownership/client count when known, context usage, and session output/cache usage.  Empty system-only sessions are hidden from pickers by default; use =M-x jcode-prune-empty-sessions=, or =P= in =jcode-list=, to delete closed empty session files explicitly.  The =Turns= column in =jcode-list= counts user prompts sent, not assistant/API messages.
 
 Input buffer keys:
 

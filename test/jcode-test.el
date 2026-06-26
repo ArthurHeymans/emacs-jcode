@@ -596,7 +596,10 @@
     (should (eq (key-binding (kbd "DEL")) #'jcode-list-unmark-backward))
     (should (eq (key-binding (kbd "U")) #'jcode-list-unmark-all))
     (should (eq (key-binding (kbd "t")) #'jcode-list-toggle-mark))
-    (should (eq (key-binding (kbd "x")) #'jcode-list-delete-marked-sessions))))
+    (should (eq (key-binding (kbd "x")) #'jcode-list-delete-marked-sessions))
+    (should (eq (key-binding (kbd "D")) #'jcode-list-delete-marked-sessions))
+    (should (string-match-p (regexp-quote jcode--session-list-help)
+                            (format "%S" header-line-format)))))
 
 (ert-deftest jcode-send-uses-native-connection-when-present ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-send-chat*"))
@@ -691,7 +694,7 @@
                 :short-name "shrimp"
                 :status "Closed"
                 :model "sonnet"
-                :conversation-count 7
+                :user-turn-count 7
                 :updated-at "2026-06-26T09:30:00Z"
                 :working-dir "/home/arthur/src/emacs-jcode")))
     (cl-letf (((symbol-function 'current-time) (lambda () now)))
@@ -729,7 +732,7 @@
            "{\"id\":\"empty\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
            nil system-file)
           (write-region
-           "{\"id\":\"real\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}]}"
+           "{\"id\":\"real\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]},{\"role\":\"assistant\",\"content\":\"hello\"}]}"
            nil real-file)
           (write-region
            "{\"id\":\"saved\",\"saved\":true,\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
@@ -744,6 +747,9 @@
             (should (member "saved" ids)))
           (let ((jcode-hide-empty-sessions nil))
             (should (equal (jcode-session-info-conversation-count
+                            (jcode--read-session-info real-file))
+                           2))
+            (should (equal (jcode-session-info-user-turn-count
                             (jcode--read-session-info real-file))
                            1))
             (should (jcode--session-empty-p (jcode--read-session-info system-file)))
