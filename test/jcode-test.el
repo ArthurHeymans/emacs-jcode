@@ -402,6 +402,20 @@
       (should-not (string-match-p "ctx" header))
       (should (string-match-p "total in 1\\.2k out 300" header)))))
 
+(ert-deftest jcode-header-uses-tui-model-context-fallback ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (jcode--set-display-metadata
+     (current-buffer)
+     :provider "OpenAI"
+     :model "gpt-5.5"
+     :token-usage-totals '((input_tokens . 718900)
+                           (output_tokens . 5100)
+                           (cache_read_input_tokens . 612100)))
+    (let ((header (jcode--header-line)))
+      (should (string-match-p "ctx 718\\.9k/272\\.0k" header))
+      (should (string-match-p "total in 718\\.9k out 5\\.1k cache 612\\.1k" header)))))
+
 (ert-deftest jcode-native-event-context-window-recognizes-aliases ()
   (should (equal (jcode-native--event-context-window '((max_context_tokens . 200000)))
                  200000))
