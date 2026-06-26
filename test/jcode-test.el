@@ -228,34 +228,20 @@
             (should buffer-read-only)))
       (kill-buffer chat))))
 
-(ert-deftest jcode-edit-tool-expands-to-diff-with-native-style-faces ()
+(ert-deftest jcode-non-edit-update-tools-stay-collapsed-by-default ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-diff-chat*"))
         (patch "*** Begin Patch\n*** Update File: foo.el\n@@\n-old\n+new\n*** End Patch"))
     (unwind-protect
         (progn
           (with-current-buffer chat (jcode-chat-mode))
           (jcode-render-tool chat `((name . "apply_patch")
-                                    (status . "done")
-                                    (output . "Done")
-                                    (input . ((patch_text . ,patch)))))
-          (with-current-buffer chat
-            (should (string-match-p (regexp-quote "(+1 -1)") (buffer-string)))
-            (should (string-match-p "old" (buffer-string)))
-            (goto-char (point-min))
-            (search-forward "edit")
-	            (should (string-match-p "┌─ diff" (buffer-string)))
-	            (search-forward "+new")
-	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-	                        'jcode-diff-added-face))
-	            (search-backward "-old")
-	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-	                        'jcode-diff-removed-face))
-	            (search-backward "@@")
-	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-	                        'jcode-diff-hunk-face))
-	            (search-backward "*** Update File")
-	            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-	                        'jcode-diff-file-face))))
+	                                    (status . "done")
+	                                    (output . "Done")
+	                                    (input . ((patch_text . ,patch)))))
+	          (with-current-buffer chat
+	            (should (string-match-p "▸ expand output" (buffer-string)))
+	            (should-not (string-match-p "┌─ diff" (buffer-string)))
+	            (should-not (string-match-p "old" (buffer-string)))))
 	      (kill-buffer chat))))
 
 (ert-deftest jcode-edit-update-renders-synthetic-diff-expanded ()
@@ -273,13 +259,13 @@
           (with-current-buffer chat
             (should (string-match-p (regexp-quote "✓ edit foo.el (+1 -1)") (buffer-string)))
             (should (string-match-p "┌─ diff" (buffer-string)))
-            (should (string-match-p "--- foo.el" (buffer-string)))
-            (search-forward "-(message \"old\")")
-            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-                        'jcode-diff-removed-face))
-            (search-forward "+(message \"new\")")
-            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
-                        'jcode-diff-added-face))))
+	            (should (string-match-p "--- foo.el" (buffer-string)))
+	            (search-forward "-(message \"old\")")
+	            (should (eq (get-text-property (line-beginning-position) 'face)
+	                        'jcode-diff-removed-face))
+	            (search-forward "+(message \"new\")")
+	            (should (eq (get-text-property (line-beginning-position) 'face)
+	                        'jcode-diff-added-face))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-render-user-inserts-blank-line-before-new-user-turn ()
@@ -302,6 +288,19 @@
           (jcode-render-assistant-message chat "answer")
           (with-current-buffer chat
             (should (string-match-p "question\n\nAssistant\n=========" (buffer-string)))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-section-heading-underlines-are-display-hidden ()
+  (let ((chat (generate-new-buffer " *jcode-test-heading-hidden-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-assistant-message chat "answer")
+          (with-current-buffer chat
+            (goto-char (point-min))
+            (search-forward "=========")
+            (should (get-text-property (match-beginning 0) 'invisible))
+            (should (equal (get-text-property (match-beginning 0) 'display) ""))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-assistant-heading-face-does-not-leak-into-markdown ()

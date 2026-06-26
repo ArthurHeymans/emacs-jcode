@@ -178,6 +178,12 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
          (rx word-start (or "edit" "patch" "write" "multiedit") word-end)
          normalized))))
 
+(defun jcode--edit-update-tool-name-p (name)
+  "Return non-nil when NAME is exactly the native edit update event/tool."
+  (equal (downcase (replace-regexp-in-string
+                    "[_-]+" " " (format "%s" (or name ""))))
+         "edit update"))
+
 (defun jcode--diff-line-prefix (prefix text)
   "Prefix every line in TEXT with PREFIX for synthetic diff display."
   (mapconcat (lambda (line) (concat prefix line))
@@ -210,10 +216,10 @@ Edit tools prefer their patch/diff input over terse success output, mirroring
 the native TUI's inline-diff expansion behavior."
   (let ((patch (jcode--tool-input-patch-text input)))
     (cond
-     ((and (jcode--edit-tool-name-p name)
-           patch
-           (not (string-empty-p (string-trim patch))))
-      (jcode--sanitize-text patch))
+	     ((and (jcode--edit-update-tool-name-p name)
+	           patch
+	           (not (string-empty-p (string-trim patch))))
+	      (jcode--sanitize-text patch))
      (t output))))
 
 (defun jcode--diff-counts (text)
@@ -233,7 +239,7 @@ the native TUI's inline-diff expansion behavior."
 (defun jcode--tool-body-kind (name text)
   "Return render kind for tool NAME expanded TEXT."
   (if (or (jcode--diff-text-p text)
-          (jcode--edit-tool-name-p name))
+          (jcode--edit-update-tool-name-p name))
       'diff
     'code))
 
@@ -259,7 +265,7 @@ the native TUI's inline-diff expansion behavior."
                    ((looking-at-p "^ ") 'jcode-diff-context-face))))
         (when face
           (add-text-properties (line-beginning-position) (line-end-position)
-                               `(font-lock-face ,face))))
+                               `(face ,face rear-nonsticky (face)))))
       (forward-line 1))
     (buffer-string)))
 
@@ -643,8 +649,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 	       (summary (jcode--tool-summary name status text input intent))
                (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
                (body-kind (jcode--tool-body-kind name text))
-               (collapsed (and (jcode--tool-lines text)
-                               (not (eq body-kind 'diff))))
+	               (collapsed (and (jcode--tool-lines text)
+	                               (not (and (eq body-kind 'diff)
+                                                 (jcode--edit-update-tool-name-p name)))))
 	       (overlay (make-overlay start start nil nil nil))
 	       (id (cl-incf jcode--tool-block-counter)))
 	    (overlay-put overlay 'jcode-tool-block t)

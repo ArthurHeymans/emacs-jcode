@@ -644,9 +644,15 @@ Streaming appends can otherwise leave raw markup visible until an idle refontify
                         (goto-char (point-max))
                         (looking-back "\n" (max (point-min) (1- (point-max)))))
                       "\n")
-	                     (t "\n\n")))
-	            (text (format "%s%s\n%s\n" prefix title (make-string (length title) ?=))))
-	       (insert (if face (propertize text 'face face 'rear-nonsticky '(face)) text))))))
+                     (t "\n\n")))
+            (heading (if face
+                         (propertize title 'face face 'rear-nonsticky '(face))
+                       title))
+            (underline (propertize (make-string (length title) ?=)
+                                   'invisible 'jcode-markup
+                                   'display ""
+                                   'rear-nonsticky '(face invisible display))))
+       (insert prefix heading "\n" underline "\n")))))
 
 (provide 'jcode-ui)
 ;;; jcode-ui.el ends here
