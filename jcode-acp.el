@@ -10,6 +10,9 @@
 (require 'jcode-ui)
 (require 'jcode-render)
 
+(declare-function jcode-apply-session-info-to-buffers "jcode-session"
+                  (session-id chat input))
+
 (defcustom jcode-program "jcode"
   "Program used to launch jcode clients such as `jcode acp'."
   :type 'string
@@ -194,9 +197,18 @@
   (jcode--request
    session "session/new" `(:cwd ,(jcode-session-cwd session))
     (lambda (result)
-     (when-let ((id (or (alist-get 'sessionId result) (alist-get 'id result))))
-       (setf (jcode-session-id session) id)
-       (jcode--session-set-display session :session-id id :status "Active"))
+	     (when-let ((id (or (alist-get 'sessionId result) (alist-get 'id result))))
+	       (setf (jcode-session-id session) id)
+	       (jcode--session-set-display session :session-id id :status "Active")
+	       (when (fboundp 'jcode-apply-session-info-to-buffers)
+		 (run-at-time
+		  0.2 nil
+		  (lambda (session-id chat input)
+		    (when (and (buffer-live-p chat) (buffer-live-p input))
+		      (jcode-apply-session-info-to-buffers session-id chat input)))
+		  id
+		  (jcode-session-chat-buffer session)
+		  (jcode-session-input-buffer session))))
      (jcode-render-info (jcode-session-chat-buffer session)
                               (format "Connected to jcode%s"
                                       (if (jcode-session-id session)

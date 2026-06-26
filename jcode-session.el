@@ -111,6 +111,13 @@ message list.  Older/minimal metadata files without messages are kept visible."
        (numberp (jcode-session-info-message-count info))
        (= (or (jcode-session-info-conversation-count info) 0) 0)))
 
+(defun jcode--session-hidden-as-empty-p (info)
+  "Return non-nil when INFO should be hidden as empty in session lists.
+Closed empty sessions are usually noise, but active empty sessions are visible
+because they can correspond to currently open Emacs/TUI windows."
+  (and (jcode--session-empty-p info)
+       (not (equal (jcode-session-info-status info) "Active"))))
+
 (defun jcode--read-session-info (file)
   "Read jcode session metadata from FILE."
   (condition-case nil
@@ -187,9 +194,9 @@ message list.  Older/minimal metadata files without messages are kept visible."
   (let ((dir (jcode--sessions-directory directory)))
     (when (file-directory-p dir)
       (sort (jcode--annotate-session-server-names
-             (cl-remove-if (lambda (info)
-                             (and jcode-hide-empty-sessions
-                                  (jcode--session-empty-p info)))
+	      (cl-remove-if (lambda (info)
+			       (and jcode-hide-empty-sessions
+				    (jcode--session-hidden-as-empty-p info)))
                            (delq nil (mapcar #'jcode--read-session-info
                                              (directory-files dir t "\\.json\\'" t))))
              directory)
@@ -296,7 +303,8 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
        :title title
        :status (jcode--session-status-string
                 (jcode-session-info-status info))
-       :model (jcode-session-info-model info)))))
+       :model (jcode-session-info-model info)
+       :provider (jcode-session-info-provider info)))))
 
 (defun jcode-list-refresh ()
   "Refresh the jcode session list buffer."

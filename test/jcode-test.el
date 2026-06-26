@@ -787,11 +787,11 @@
           (write-region
            "{\"id\":\"zero\",\"status\":\"Active\",\"updated_at\":\"2026\",\"messages\":[]}"
            nil zero-file)
-          (let ((ids (mapcar #'jcode-session-info-id (jcode-list-sessions-data root))))
-            (should-not (member "empty" ids))
-            (should-not (member "zero" ids))
-            (should (member "real" ids))
-            (should (member "saved" ids)))
+	  (let ((ids (mapcar #'jcode-session-info-id (jcode-list-sessions-data root))))
+	    (should-not (member "empty" ids))
+	    (should (member "zero" ids))
+	    (should (member "real" ids))
+	    (should (member "saved" ids)))
           (let ((jcode-hide-empty-sessions nil))
             (should (equal (jcode-session-info-conversation-count
                             (jcode--read-session-info real-file))
@@ -803,6 +803,26 @@
             (should (jcode--session-empty-p (jcode--read-session-info zero-file)))
             (should-not (jcode--session-empty-p (jcode--read-session-info real-file)))
             (should-not (jcode--session-empty-p (jcode--read-session-info saved-file)))))
+	      (delete-directory root t))))
+
+(ert-deftest jcode-apply-session-info-includes-provider ()
+  (let* ((root (make-temp-file "jcode-provider-info" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (chat (generate-new-buffer " *jcode-test-provider-chat*"))
+         (input (generate-new-buffer " *jcode-test-provider-input*")))
+    (unwind-protect
+        (progn
+          (write-region
+           "{\"id\":\"s1\",\"status\":\"Active\",\"model\":\"gpt-5.5\",\"provider_key\":\"openai\",\"messages\":[]}"
+           nil (expand-file-name "s1.json" root))
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (jcode-apply-session-info-to-buffers "s1" chat input)
+          (with-current-buffer input
+            (should (equal jcode--display-provider "openai"))
+            (should (equal jcode--display-model "gpt-5.5"))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input))
       (delete-directory root t))))
 
 (ert-deftest jcode-prune-empty-sessions-deletes-only-closed-empty-files ()
