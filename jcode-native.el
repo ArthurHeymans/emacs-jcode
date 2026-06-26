@@ -13,7 +13,12 @@
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
   process chat input session-id cwd next-id line-buffer poll-timer last-history-size
-  busy followup-queue takeover)
+  busy followup-queue takeover compacted-total compacted-visible compacted-remaining)
+
+(defcustom jcode-compacted-history-load-count 64
+  "Number of compacted messages to add when loading older history."
+  :type 'natnum
+  :group 'jcode)
 
 (defvar-local jcode--native-connection nil)
 
@@ -110,6 +115,31 @@ history."
 (defun jcode-native-cancel (connection)
   "Cancel current native generation for CONNECTION."
   (jcode-native--request connection "cancel"))
+
+(defun jcode-native-get-compacted-history (connection visible-messages)
+  "Ask CONNECTION to render VISIBLE-MESSAGES from compacted history."
+  (jcode-native--request connection "get_compacted_history"
+                         :visible_messages visible-messages))
+
+(defun jcode--native-connection-for-command ()
+  "Return native connection associated with the current jcode buffer."
+  (or (and (bound-and-true-p jcode--native-connection) jcode--native-connection)
+      (when (bound-and-true-p jcode--chat-buffer)
+        (buffer-local-value 'jcode--native-connection jcode--chat-buffer))))
+
+(defun jcode-load-older-history (&optional count)
+  "Load COUNT more compacted history messages into the current chat buffer."
+  (interactive "P")
+  (let* ((connection (or (jcode--native-connection-for-command)
+                         (user-error "No native jcode connection")))
+         (visible (or (jcode-native-connection-compacted-visible connection) 0))
+         (remaining (jcode-native-connection-compacted-remaining connection))
+         (increment (prefix-numeric-value (or count jcode-compacted-history-load-count)))
+         (target (+ visible (max 1 increment))))
+    (when (and remaining (<= remaining 0))
+      (user-error "No older compacted history remains"))
+    (jcode-native-get-compacted-history connection target)
+    (message "Jcode: loading older history (%d compacted messages visible)..." target)))
 
 (defun jcode-native-set-model (connection model)
   "Set CONNECTION's active MODEL."
@@ -256,12 +286,57 @@ history."
   (let* ((chat (jcode-native-connection-chat connection))
          (messages (append (alist-get 'messages event) nil))
          (history-size (length (prin1-to-string messages))))
+    (jcode-native--remember-compacted-history connection event)
     (unless (equal history-size (jcode-native-connection-last-history-size connection))
       (setf (jcode-native-connection-last-history-size connection) history-size)
       (jcode--clear-chat-buffer chat)
       (jcode--session-set-display-native connection event)
       (mapc (lambda (message) (jcode-native--render-history-message chat message))
             messages))))
+
+(defun jcode-native--remember-compacted-history (connection event)
+  "Store compacted-history counters from EVENT on CONNECTION and buffers."
+  (let ((total (alist-get 'compacted_total event))
+        (visible (alist-get 'compacted_visible event))
+        (remaining (alist-get 'compacted_remaining event)))
+    (when total (setf (jcode-native-connection-compacted-total connection) total))
+    (when visible (setf (jcode-native-connection-compacted-visible connection) visible))
+    (when remaining (setf (jcode-native-connection-compacted-remaining connection) remaining))
+    (dolist (buffer (list (jcode-native-connection-chat connection)
+                          (jcode-native-connection-input connection)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (when total (setq jcode--compacted-total total))
+          (when visible (setq jcode--compacted-visible visible))
+          (when remaining (setq jcode--compacted-remaining remaining)))))))
+
+(defun jcode-native--render-compacted-history (connection event)
+  "Render expanded compacted-history EVENT for CONNECTION."
+  (let* ((chat (jcode-native-connection-chat connection))
+         (messages (append (alist-get 'messages event) nil))
+         (windows (get-buffer-window-list chat nil t))
+         (old-size (with-current-buffer chat (buffer-size)))
+         (window-states (mapcar (lambda (window)
+                                  (list window
+                                        (with-current-buffer chat
+                                          (- old-size (window-start window)))
+                                        (with-current-buffer chat
+                                          (- old-size (window-point window)))))
+                                windows)))
+    (jcode-native--remember-compacted-history connection event)
+    (jcode--clear-chat-buffer chat)
+    (jcode--session-set-display-native connection event)
+    (mapc (lambda (message) (jcode-native--render-history-message chat message)) messages)
+    (let ((new-size (with-current-buffer chat (buffer-size))))
+      (dolist (state window-states)
+        (pcase-let ((`(,window ,start-from-end ,point-from-end) state))
+          (when (window-live-p window)
+            (with-current-buffer chat
+              (set-window-start window (max (point-min) (- new-size start-from-end)) t)
+              (set-window-point window (max (point-min) (- new-size point-from-end))))))))
+    (message "Jcode: loaded older history (%s visible, %s remaining)"
+             (or (alist-get 'compacted_visible event) "?")
+             (or (alist-get 'compacted_remaining event) "?"))))
 
 (defun jcode-native--sentinel (proc _event)
   "Clean native connection state when PROC exits."
@@ -314,6 +389,7 @@ history."
         (chat (jcode-native-connection-chat connection)))
     (pcase type
       ("history" (jcode-native--render-history connection event))
+      ("compacted_history" (jcode-native--render-compacted-history connection event))
       ("ack" nil)
       ("done"
        (setf (jcode-native-connection-busy connection) nil)

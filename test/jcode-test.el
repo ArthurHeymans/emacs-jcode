@@ -461,6 +461,56 @@
     (should-error (jcode-native--send connection '(:type "set_model"))
                   :type 'user-error)))
 
+(ert-deftest jcode-load-older-history-requests-expanded-compacted-window ()
+  (let ((chat (generate-new-buffer " *jcode-test-compact-chat*"))
+        (input (generate-new-buffer " *jcode-test-compact-input*"))
+        sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode) (setq jcode--chat-buffer chat))
+          (let ((connection (jcode--make-native-connection :chat chat :input input
+                                                            :compacted-visible 65
+                                                            :compacted-remaining 128)))
+            (with-current-buffer chat (setq jcode--native-connection connection))
+            (cl-letf (((symbol-function 'jcode-native--request)
+                       (lambda (_connection type &rest fields)
+                         (setq sent (cons type fields))
+                         9))
+                      ((symbol-function 'message) #'ignore))
+              (with-current-buffer chat (jcode-load-older-history))
+              (should (equal sent '("get_compacted_history" :visible_messages 129))))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-compacted-history-rerenders-and-remembers-counters ()
+  (let ((chat (generate-new-buffer " *jcode-test-compact-event-chat*"))
+        (input (generate-new-buffer " *jcode-test-compact-event-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode-native--handle-event
+             connection
+             '((type . "compacted_history")
+               (session_id . "s1")
+               (compacted_total . 2347)
+               (compacted_visible . 129)
+               (compacted_remaining . 2218)
+               (messages . [((role . "user") (content . "old question"))
+                            ((role . "assistant") (content . "old answer"))])))
+            (with-current-buffer chat
+              (should (string-match-p "old question" (buffer-string)))
+              (should (string-match-p "old answer" (buffer-string)))
+              (should (= jcode--compacted-visible 129))
+              (should (= jcode--compacted-remaining 2218)))
+            (with-current-buffer input
+              (should (= jcode--compacted-total 2347)))
+            (should (= (jcode-native-connection-compacted-visible connection) 129))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-select-fast-mode-sends-selected-service-tier ()
   (let ((chat (generate-new-buffer " *jcode-test-fast-chat*"))
         (input (generate-new-buffer " *jcode-test-fast-input*"))

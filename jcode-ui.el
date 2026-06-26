@@ -22,6 +22,7 @@
 (declare-function jcode-cycle-reasoning-effort "jcode-native")
 (declare-function jcode-select-reasoning-effort "jcode-native")
 (declare-function jcode-select-fast-mode "jcode-native")
+(declare-function jcode-load-older-history "jcode-native")
 (declare-function jcode-menu "jcode-menu")
 (declare-function jcode-toggle-block "jcode-render")
 (declare-function jcode--file-reference-capf "jcode-input")
@@ -96,6 +97,9 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defvar-local jcode--display-connection-type nil)
 (defvar-local jcode--display-owner nil)
 (defvar-local jcode--display-activity nil)
+(defvar-local jcode--compacted-total nil)
+(defvar-local jcode--compacted-visible nil)
+(defvar-local jcode--compacted-remaining nil)
 (defvar-local jcode--available-models nil)
 (defvar-local jcode--killing-linked-buffer nil)
 
@@ -344,6 +348,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (define-key map (kbd "C-c C-k") #'jcode-cancel)
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
     (define-key map (kbd "C-c C-p") #'jcode-menu)
+    (define-key map (kbd "L") #'jcode-load-older-history)
     (define-key map (kbd "TAB") #'jcode-toggle-block)
     (define-key map (kbd "<tab>") #'jcode-toggle-block)
     map)
@@ -402,6 +407,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
 (define-key jcode-chat-mode-map (kbd "C-c C-k") #'jcode-cancel)
 (define-key jcode-chat-mode-map (kbd "C-c C-d") #'jcode-disconnect)
 (define-key jcode-chat-mode-map (kbd "C-c C-p") #'jcode-menu)
+(define-key jcode-chat-mode-map (kbd "L") #'jcode-load-older-history)
 (define-key jcode-chat-mode-map (kbd "TAB") #'jcode-toggle-block)
 (define-key jcode-chat-mode-map (kbd "<tab>") #'jcode-toggle-block)
 
@@ -599,7 +605,8 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
             (goto-char (point-max))
             (let ((start (point)))
               (funcall inserter)
-              (jcode--fontify-inserted-markdown start (point))))))
+              (jcode--fontify-inserted-markdown start (point))
+              (jcode--hide-turn-heading-underlines start (point))))))
       (dolist (state windows)
         (pcase-let ((`(,window ,at-bottom ,old-point ,old-start) state))
           (when (window-live-p window)
@@ -620,6 +627,16 @@ Streaming appends can otherwise leave raw markup visible until an idle refontify
                              (line-beginning-position))))
         (font-lock-flush fontify-start end)
         (font-lock-ensure fontify-start end)))))
+
+(defun jcode--hide-turn-heading-underlines (start end)
+  "Hide setext underline markup for jcode turn headings between START and END."
+  (save-excursion
+    (goto-char (max (point-min) start))
+    (while (re-search-forward "^\\(You\\|Assistant\\)\n\\(=+\\)$" end t)
+      (add-text-properties (match-beginning 2) (match-end 2)
+                           '(invisible jcode-markup
+                             display ""
+                             rear-nonsticky (face invisible display))))))
 
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."
