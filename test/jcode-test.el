@@ -113,6 +113,12 @@
           (should (equal (cadr (assq 'default face-remapping-alist)) 'jcode-text-face))
           (should (equal (cadr (assq 'font-lock-comment-face face-remapping-alist))
                          'jcode-dim-face))
+          (should (equal (cadr (assq 'md-ts-heading-1 face-remapping-alist))
+                         'jcode-heading-1-face))
+          (should (equal (cadr (assq 'md-ts-code face-remapping-alist))
+                         'jcode-code-face))
+          (should (equal (cadr (assq 'md-ts-block-quote face-remapping-alist))
+                         'jcode-dim-face))
           (should (equal (face-attribute 'jcode-assistant-face :foreground nil t)
                          "#81c784"))
           (should (equal (face-attribute 'jcode-user-face :foreground nil t)
@@ -308,7 +314,28 @@
             (goto-char (point-min))
             (search-forward "**bold**")
             (should-not (eq (get-text-property (match-beginning 0) 'face)
-                            'jcode-assistant-face))))
+              'jcode-assistant-face))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-assistant-markdown-markup-is-hidden-after-stream-append ()
+  (let ((chat (generate-new-buffer " *jcode-test-markdown-hidden-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-assistant-message chat "**bold** and `code`")
+          (with-current-buffer chat
+            (when (derived-mode-p 'md-ts-mode)
+              ;; Some batch/Nix environments can load `md-ts-mode' but do not
+              ;; install its hide-markup font-lock rules.  In that case this
+              ;; regression is not meaningful for the current Emacs build.
+              (font-lock-ensure (point-min) (point-max))
+              (goto-char (point-min))
+              (search-forward "**")
+              (unless (get-text-property (match-beginning 0) 'invisible)
+                (ert-skip "md-ts-mode hide-markup font-lock is unavailable"))
+              (should (get-text-property (match-beginning 0) 'invisible))
+              (search-forward "`")
+              (should (get-text-property (match-beginning 0) 'invisible)))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()

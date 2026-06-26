@@ -366,7 +366,17 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                 (font-lock-keyword-face jcode-strong-face)
                 (font-lock-function-name-face jcode-heading-face)
                 (font-lock-type-face jcode-link-face)
+                (md-ts-heading-1 jcode-heading-1-face)
+                (md-ts-heading-2 jcode-heading-2-face)
+                (md-ts-heading jcode-heading-face)
+                (md-ts-code jcode-code-face)
+                (md-ts-inline-code jcode-code-face)
+                (md-ts-link jcode-link-face)
+                (md-ts-block-quote jcode-dim-face)
+                (md-ts-markup jcode-dim-face)
+                (md-ts-delimiter jcode-dim-face)
                 (bold jcode-strong-face bold)
+                (link jcode-link-face link)
                 (italic italic)))
   (when (derived-mode-p 'md-ts-mode)
     ;; Pi-style display: keep canonical markdown in the buffer but hide markup
@@ -588,7 +598,9 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
               (buffer-read-only nil))
           (save-excursion
             (goto-char (point-max))
-            (funcall inserter))))
+            (let ((start (point)))
+              (funcall inserter)
+              (jcode--fontify-inserted-markdown start (point))))))
       (dolist (state windows)
         (pcase-let ((`(,window ,at-bottom ,old-point ,old-start) state))
           (when (window-live-p window)
@@ -597,6 +609,18 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
                                   (with-current-buffer buffer (point-max)))
               (set-window-start window old-start t)
               (set-window-point window old-point))))))))
+
+(defun jcode--fontify-inserted-markdown (start end)
+  "Refresh markdown highlighting for inserted region START to END.
+`md-ts-mode' hides markdown delimiters with text properties during font-lock.
+Streaming appends can otherwise leave raw markup visible until an idle refontify."
+  (when (and (derived-mode-p 'md-ts-mode) (< start end))
+    (ignore-errors
+      (let ((fontify-start (save-excursion
+                             (goto-char start)
+                             (line-beginning-position))))
+        (font-lock-flush fontify-start end)
+        (font-lock-ensure fontify-start end)))))
 
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."
