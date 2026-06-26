@@ -1308,6 +1308,43 @@
 (ert-deftest jcode-list-refresh-is-command ()
   (should (commandp #'jcode-list-refresh)))
 
+(ert-deftest jcode-list-aggregate-keeps-duplicate-session-ids-distinct ()
+  (cl-letf (((symbol-function 'jcode-list-sessions-data)
+             (lambda (directory)
+               (list (jcode--make-session-info
+                      :id "same" :short-name directory :updated-at directory)))))
+    (let* ((sessions (jcode-list-sessions-data-aggregate '("~/" "/rpc:test:~/")))
+           (row-ids (mapcar #'jcode--session-row-id sessions)))
+      (should (= (length sessions) 2))
+      (should (member '("same" . "~/") row-ids))
+      (should (member '("same" . "/rpc:test:~/") row-ids)))))
+
+(ert-deftest jcode-list-source-directories-dedupes-equivalent-remotes ()
+  (let ((sources (jcode--dedupe-list-source-directories
+                  '("~/" "/sshx:gmktec-k11:~/" "/scpx:gmktec-k11:~/"
+                    "/rpc:gmktec-k11:~/"))))
+    (should (equal sources '("~/" "/rpc:gmktec-k11:~/")))))
+
+(ert-deftest jcode-list-open-uses-row-source-directory ()
+  (let ((buffer (generate-new-buffer " *jcode-list-open-test*"))
+        resumed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-resume)
+                   (lambda (session-id full-load)
+                     (setq resumed (list session-id full-load default-directory)))))
+          (with-current-buffer buffer
+            (jcode-list-mode)
+            (setq tabulated-list-entries
+                  (list (list '("remote-session" . "/rpc:test:~/")
+                              ["Remote" "live" "remote rpc:test" "" "" "" "" "chomp"])))
+            (tabulated-list-print t)
+            (goto-char (point-min))
+            (search-forward "Remote")
+            (beginning-of-line)
+            (jcode-list-open))
+          (should (equal resumed '("remote-session" t "/rpc:test:~/"))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest jcode-resume-reuses-existing-session-buffer-pair ()
   (let* ((dir default-directory)
          (buffers (jcode--make-buffers dir "s-reuse"))

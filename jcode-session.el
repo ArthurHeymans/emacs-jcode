@@ -14,6 +14,15 @@
 (require 'jcode-ui)
 
 (declare-function jcode-resume "jcode" (session-id &optional full-load))
+(declare-function tramp-list-connections "tramp-cache" ())
+(declare-function tramp-make-tramp-file-name "tramp" (vec &optional localname))
+(declare-function tramp-dissect-file-name "tramp" (name &optional nodefault))
+(declare-function tramp-file-name-method "tramp" (vec))
+(declare-function tramp-file-name-user "tramp" (vec))
+(declare-function tramp-file-name-host "tramp" (vec))
+(declare-function tramp-file-name-port "tramp" (vec))
+(declare-function tramp-file-name-hop "tramp" (vec))
+(defvar tramp-methods)
 
 (defcustom jcode-sessions-directory nil
   "Directory containing jcode session JSON files.
@@ -32,9 +41,10 @@ messages, which are commonly created by opening jcode and doing nothing."
 (cl-defstruct (jcode-session-info (:constructor jcode--make-session-info))
   id title short-name working-dir status model provider updated-at created-at file
   last-pid server-name message-count conversation-count user-turn-count saved
-  location client)
+  location client source-directory)
 
 (defvar-local jcode--session-list-directory nil)
+(defvar-local jcode--session-list-directories nil)
 
 (defconst jcode--session-list-format
   [ ("Title" 28 t)
@@ -288,6 +298,136 @@ case, fall back to matching the session working directory."
               (string> (or (jcode-session-info-updated-at a) "")
                        (or (jcode-session-info-updated-at b) "")))))))
 
+(defun jcode--session-source-directory (info &optional fallback)
+  "Return INFO's source directory, falling back to FALLBACK."
+  (or (jcode-session-info-source-directory info) fallback default-directory))
+
+(defun jcode--session-row-id (info &optional fallback)
+  "Return stable tabulated-list id for INFO."
+  (cons (jcode-session-info-id info)
+        (jcode--session-source-directory info fallback)))
+
+(defun jcode--session-row-session-id (row-id)
+  "Return session id from ROW-ID."
+  (if (consp row-id) (car row-id) row-id))
+
+(defun jcode--session-row-directory (row-id)
+  "Return source directory from ROW-ID."
+  (if (consp row-id) (cdr row-id) jcode--session-list-directory))
+
+(defun jcode--list-source-directories-from-buffers ()
+  "Return local and remote source directories known from live buffers."
+  (let (dirs)
+    (dolist (buffer (buffer-list))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (when (and (stringp default-directory)
+                     (or (not (file-remote-p default-directory))
+                         (file-remote-p default-directory)))
+            (push (if-let ((remote (file-remote-p default-directory)))
+                      (concat remote "~/")
+                    "~/")
+                  dirs)))))
+    dirs))
+
+(defun jcode--list-source-directories-from-tramp-connections ()
+  "Return remote source directories for active TRAMP connections."
+  (when (fboundp 'tramp-list-connections)
+    (delq nil
+          (mapcar (lambda (vec)
+                    (ignore-errors
+                      (let ((name (file-name-as-directory
+                                   (tramp-make-tramp-file-name vec 'noloc))))
+                        ;; `tramp-make-tramp-file-name' can render a no-localname
+                        ;; connection as /method:host:./.  Session registries live
+                        ;; under the remote home, so use an explicit ~/ root.
+                        (if (string-match-p ":\\./\\'" name)
+                            (replace-regexp-in-string ":\\./\\'" ":~/" name)
+                          name))))
+                  (tramp-list-connections)))))
+
+(defun jcode--normalize-list-source-directory (directory)
+  "Normalize aggregate list source DIRECTORY to a host home root."
+  (when directory
+    (let ((dir (if (string-suffix-p "/" directory) directory (concat directory "/"))))
+      (if (string-match-p ":\\./\\'" dir)
+          (replace-regexp-in-string ":\\./\\'" ":~/" dir)
+        dir))))
+
+(defun jcode--list-source-remote-key-for-tramp-vec (vec)
+  "Return aggregate host identity key for TRAMP VEC.
+jcode daemons are keyed by the final remote user/host/port, not by equivalent
+TRAMP methods.  `/rpc:host:', `/sshx:host:', and `/scpx:host:' therefore refer
+to the same remote jcode daemon and should be queried once."
+  (when-let ((host (tramp-file-name-host vec)))
+    (list (or (tramp-file-name-user vec) (user-login-name))
+          (substring-no-properties host)
+          (tramp-file-name-port vec))))
+
+(defun jcode--list-source-remote-key (directory)
+  "Return aggregate host identity key for remote DIRECTORY, or nil for local."
+  (when (file-remote-p directory)
+    (or (when (and (boundp 'tramp-methods)
+              (assoc (file-remote-p directory 'method) tramp-methods))
+          (ignore-errors
+            (jcode--list-source-remote-key-for-tramp-vec
+             (tramp-dissect-file-name directory))))
+        (let ((host (file-remote-p directory 'host)))
+          (when host
+            (list (or (file-remote-p directory 'user) (user-login-name))
+                  (substring-no-properties host)
+                  nil))))))
+
+(defun jcode--list-source-score (directory)
+  "Return preference score for aggregate source DIRECTORY; lower is better."
+  (+ (if (file-remote-p directory 'hop) 10 0)
+     (pcase (or (file-remote-p directory 'method) "local")
+       ("rpc" 0)
+       ("sshx" 1)
+       ("ssh" 2)
+       ("scpx" 3)
+       ("scp" 4)
+       ("local" 0)
+       (_ 9))))
+
+(defun jcode--dedupe-list-source-directories (directories)
+  "Return DIRECTORIES with equivalent remote daemon identities removed."
+  (let ((best-by-key (make-hash-table :test #'equal))
+        result)
+    (dolist (directory directories)
+      (let* ((directory (jcode--normalize-list-source-directory directory))
+             (key (or (jcode--list-source-remote-key directory) 'local))
+             (score (jcode--list-source-score directory))
+             (existing (gethash key best-by-key)))
+        (when (or (null existing) (< score (car existing)))
+          (puthash key (cons score directory) best-by-key))))
+    (maphash (lambda (_key value) (push (cdr value) result)) best-by-key)
+    (nreverse result)))
+
+(defun jcode-list-source-directories (&optional directory)
+  "Return directories whose hosts should contribute to aggregate `jcode-list'."
+  (jcode--dedupe-list-source-directories
+   (delq nil
+         (append (list "~/"
+                       (when directory
+                         (if-let ((remote (file-remote-p directory)))
+                             (concat remote "~/")
+                           "~/")))
+                 (jcode--list-source-directories-from-buffers)
+                 (jcode--list-source-directories-from-tramp-connections)))))
+
+(defun jcode-list-sessions-data-aggregate (&optional directories)
+  "Return session metadata aggregated across DIRECTORIES' hosts."
+  (sort
+   (cl-loop for directory in (or directories (jcode-list-source-directories default-directory))
+            append (mapcar (lambda (info)
+                             (setf (jcode-session-info-source-directory info) directory)
+                             info)
+                           (or (ignore-errors (jcode-list-sessions-data directory)) nil)))
+   (lambda (a b)
+     (string> (or (jcode-session-info-updated-at a) "")
+              (or (jcode-session-info-updated-at b) "")))))
+
 (defun jcode--session-display-title (info)
   "Return display title for session INFO."
   (or (jcode-session-info-title info)
@@ -366,7 +506,7 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
 
 (defun jcode--session-list-entry (info)
   "Return a `tabulated-list-entries' row for INFO."
-  (let ((id (jcode-session-info-id info)))
+  (let ((id (jcode--session-row-id info jcode--session-list-directory)))
     (list id
           (vector (jcode--session-display-title info)
                   (jcode--session-status-string
@@ -400,7 +540,9 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
   (tabulated-list-init-header)
   (setq tabulated-list-entries
         (mapcar #'jcode--session-list-entry
-                (jcode-list-sessions-data jcode--session-list-directory)))
+                (if jcode--session-list-directories
+                    (jcode-list-sessions-data-aggregate jcode--session-list-directories)
+                  (jcode-list-sessions-data jcode--session-list-directory))))
   (tabulated-list-print t))
 
 (defun jcode-refresh-session-list-buffers ()
@@ -450,8 +592,8 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
    (if (eq (char-after (line-beginning-position)) ?*) " " "*")
    t))
 
-(defun jcode-list-marked-session-ids ()
-  "Return marked session ids in the current `jcode-list-mode' buffer."
+(defun jcode-list-marked-row-ids ()
+  "Return marked row ids in the current `jcode-list-mode' buffer."
   (let (ids)
     (save-excursion
       (goto-char (point-min))
@@ -461,6 +603,10 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
           (push (tabulated-list-get-id) ids))
         (forward-line 1)))
     (nreverse ids)))
+
+(defun jcode-list-marked-session-ids ()
+  "Return marked session ids in the current `jcode-list-mode' buffer."
+  (mapcar #'jcode--session-row-session-id (jcode-list-marked-row-ids)))
 
 (defun jcode--session-info-by-id (session-id &optional directory)
   "Return session info for SESSION-ID in DIRECTORY."
@@ -495,9 +641,11 @@ An empty or nil TITLE clears the custom title."
 (defun jcode-list-rename-session (title)
   "Rename the session at point to TITLE by editing its persisted session file."
   (interactive (list (read-string "Session title (empty clears): ")))
-  (let ((id (tabulated-list-get-id)))
-    (unless id (user-error "No session at point"))
-    (jcode-rename-session-file id title jcode--session-list-directory)
+  (let* ((row-id (tabulated-list-get-id))
+         (id (jcode--session-row-session-id row-id))
+         (directory (jcode--session-row-directory row-id)))
+    (unless row-id (user-error "No session at point"))
+    (jcode-rename-session-file id title directory)
     (message "Jcode: renamed session %s" id)))
 
 (defun jcode--delete-session-files (session-ids directory)
@@ -523,11 +671,13 @@ Return non-nil when a file was deleted."
 (defun jcode-list-delete-session ()
   "Delete the session file at point after confirmation."
   (interactive)
-  (let ((id (tabulated-list-get-id)))
-    (unless id (user-error "No session at point"))
+  (let* ((row-id (tabulated-list-get-id))
+         (id (jcode--session-row-session-id row-id))
+         (directory (jcode--session-row-directory row-id)))
+    (unless row-id (user-error "No session at point"))
     (when (or noninteractive
               (yes-or-no-p (format "Delete jcode session %s? " id)))
-      (let ((deleted (jcode--delete-session-files (list id) jcode--session-list-directory)))
+      (let ((deleted (jcode--delete-session-files (list id) directory)))
         (jcode-list-refresh)
         (message "Jcode: deleted %d session%s"
                  deleted (if (= deleted 1) "" "s"))))))
@@ -535,13 +685,17 @@ Return non-nil when a file was deleted."
 (defun jcode-list-delete-marked-sessions ()
   "Delete all marked session files after confirmation."
   (interactive)
-  (let ((ids (jcode-list-marked-session-ids)))
-    (unless ids (user-error "No marked sessions"))
+  (let ((row-ids (jcode-list-marked-row-ids)))
+    (unless row-ids (user-error "No marked sessions"))
     (when (or noninteractive
               (yes-or-no-p (format "Delete %d marked jcode session%s? "
-                                   (length ids)
-                                   (if (= (length ids) 1) "" "s"))))
-      (let ((deleted (jcode--delete-session-files ids jcode--session-list-directory)))
+                                   (length row-ids)
+                                   (if (= (length row-ids) 1) "" "s"))))
+      (let ((deleted 0))
+        (dolist (row-id row-ids)
+          (setq deleted (+ deleted (jcode--delete-session-files
+                                    (list (jcode--session-row-session-id row-id))
+                                    (jcode--session-row-directory row-id)))))
         (jcode-list-refresh)
         (message "Jcode: deleted %d session%s"
                  deleted (if (= deleted 1) "" "s"))))))
@@ -550,12 +704,13 @@ Return non-nil when a file was deleted."
   "Open all marked sessions.
 With prefix argument RESUME-ONLY, attach without history replay."
   (interactive "P")
-  (let ((ids (jcode-list-marked-session-ids)))
-    (unless ids (user-error "No marked sessions"))
-    (dolist (id ids)
-      (jcode-resume id (not resume-only)))
+  (let ((row-ids (jcode-list-marked-row-ids)))
+    (unless row-ids (user-error "No marked sessions"))
+    (dolist (row-id row-ids)
+      (let ((default-directory (jcode--session-row-directory row-id)))
+        (jcode-resume (jcode--session-row-session-id row-id) (not resume-only))))
     (message "Jcode: opened %d marked session%s"
-             (length ids) (if (= (length ids) 1) "" "s"))))
+             (length row-ids) (if (= (length row-ids) 1) "" "s"))))
 
 (defun jcode-prune-empty-sessions (&optional directory)
   "Delete closed empty session files for DIRECTORY.
@@ -594,8 +749,10 @@ This never deletes saved sessions or sessions whose persisted status is Active."
   "Open session at point with history replay.
 With prefix argument RESUME-ONLY, attach without replay."
   (interactive "P")
-  (let ((id (tabulated-list-get-id)))
-    (unless id (user-error "No session at point"))
+  (let* ((row-id (tabulated-list-get-id))
+         (id (jcode--session-row-session-id row-id))
+         (default-directory (jcode--session-row-directory row-id)))
+    (unless row-id (user-error "No session at point"))
     (jcode-resume id (not resume-only))))
 
 (defvar jcode-list-mode-map

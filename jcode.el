@@ -29,6 +29,8 @@
 
 (declare-function jcode-apply-session-info-to-buffers "jcode-session"
                   (session-id chat input))
+(declare-function jcode-list-source-directories "jcode-session" (&optional directory))
+(defvar jcode--session-list-directories)
 (declare-function jcode-session-teardown "jcode-acp" (session))
 (declare-function jcode-native-open-session "jcode-native"
                   (session-id cwd chat input))
@@ -263,7 +265,7 @@ With prefix argument ANY-DIRECTORY, resume the globally latest known session."
 
 ;;;###autoload
 (defun jcode-list ()
-  "List known jcode sessions.
+  "List known jcode sessions across local and known remote hosts.
 RET loads with replay, `r' resumes without replay, `R' renames at point."
   (interactive)
   (let ((buffer (get-buffer-create "*jcode-sessions*"))
@@ -271,6 +273,7 @@ RET loads with replay, `r' resumes without replay, `R' renames at point."
     (with-current-buffer buffer
       (jcode-list-mode)
       (setq jcode--session-list-directory dir)
+      (setq jcode--session-list-directories (jcode-list-source-directories dir))
       (jcode-list-refresh))
     (pop-to-buffer buffer)))
 
