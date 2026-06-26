@@ -151,6 +151,34 @@
     (jcode--history-isearch-goto nil)
     (should (equal (buffer-string) "draft"))))
 
+(ert-deftest jcode-seed-input-history-uses-server-prompts-newest-first ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (jcode-seed-input-history '("old prompt" "new prompt"))
+    (should (= (ring-length (jcode--input-ring)) 2))
+    (should (equal (ring-ref (jcode--input-ring) 0) "new prompt"))
+    (should (equal (ring-ref (jcode--input-ring) 1) "old prompt"))))
+
+(ert-deftest jcode-native-history-seeds-input-history-from-user-messages ()
+  (let ((chat (generate-new-buffer " *jcode-test-history-chat*"))
+        (input (generate-new-buffer " *jcode-test-history-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode-native--render-history
+             connection
+             '((messages . [((role . "user") (content . "first"))
+                            ((role . "assistant") (content . "reply"))
+                            ((role . "user") (content . "second"))])))
+            (with-current-buffer input
+              (should (= (ring-length (jcode--input-ring)) 2))
+              (should (equal (ring-ref (jcode--input-ring) 0) "second"))
+              (should (equal (ring-ref (jcode--input-ring) 1) "first")))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-decorate-tables-adds-display-overlay-with-canonical-text ()
   (let ((chat (generate-new-buffer " *jcode-test-table-chat*")))
     (unwind-protect

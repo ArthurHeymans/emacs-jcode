@@ -11,6 +11,8 @@
 (require 'jcode-render)
 (require 'jcode-session)
 
+(declare-function jcode-seed-input-history "jcode-input" (prompts))
+
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
   process chat input session-id cwd next-id line-buffer poll-timer last-history-size
   busy followup-queue takeover)
@@ -403,11 +405,20 @@ and STATE is \"on\" or \"off\"."
 (defun jcode-native--render-history (connection event)
   "Render native history EVENT for CONNECTION."
   (let* ((chat (jcode-native-connection-chat connection))
+         (input (jcode-native-connection-input connection))
          (messages (append (alist-get 'messages event) nil))
          (history-size (length (prin1-to-string messages))))
     (jcode-native--remember-compacted-history connection event)
     (unless (equal history-size (jcode-native-connection-last-history-size connection))
       (setf (jcode-native-connection-last-history-size connection) history-size)
+      (when (and (buffer-live-p input) (fboundp 'jcode-seed-input-history))
+        (with-current-buffer input
+          (jcode-seed-input-history
+           (delq nil
+                 (mapcar (lambda (message)
+                           (when (equal (alist-get 'role message) "user")
+                             (alist-get 'content message)))
+                         messages)))))
       (jcode--clear-chat-buffer chat)
       (jcode--session-set-display-native connection event)
       (mapc (lambda (message) (jcode-native--render-history-message chat message))

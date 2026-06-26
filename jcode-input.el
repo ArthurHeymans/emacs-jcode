@@ -213,6 +213,16 @@
                (or (ring-empty-p ring) (not (string= text (ring-ref ring 0)))))
       (ring-insert ring text))))
 
+(defun jcode-seed-input-history (prompts)
+  "Replace the current input history with PROMPTS from oldest to newest.
+PROMPTS is usually derived from server-side session history on reconnect."
+  (setq jcode--input-ring (make-ring jcode-input-ring-size)
+        jcode--input-ring-index nil
+        jcode--input-saved nil)
+  (dolist (prompt prompts)
+    (when (stringp prompt)
+      (jcode--history-add (substring-no-properties prompt)))))
+
 (defun jcode-previous-input ()
   "Cycle backward through prompt history."
   (interactive)
