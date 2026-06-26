@@ -8,6 +8,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'project)
 (require 'md-ts-mode nil t)
 
@@ -466,6 +467,25 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
           kind
           (file-name-nondirectory (directory-file-name dir))
           (if session-id (format "[%s]" session-id) "")))
+
+(defun jcode--buffer-title-name (kind title session-id)
+  "Return display buffer name for KIND, TITLE, and SESSION-ID."
+  (format "*jcode-%s: %s%s*"
+          kind
+          (if (and (stringp title) (not (string-empty-p title))) title "jcode")
+          (if session-id (format "[%s]" session-id) "")))
+
+(defun jcode--rename-display-buffers (chat input title)
+  "Rename CHAT and INPUT buffers to include display TITLE."
+  (when (and (buffer-live-p chat)
+             (stringp title)
+             (not (string-empty-p title)))
+    (let ((session-id (with-current-buffer chat jcode--display-session-id)))
+      (with-current-buffer chat
+        (rename-buffer (jcode--buffer-title-name "chat" title session-id) t))
+      (when (buffer-live-p input)
+        (with-current-buffer input
+          (rename-buffer (jcode--buffer-title-name "input" title session-id) t))))))
 
 (defun jcode--make-buffers (dir &optional session-id)
   "Create chat and input buffers for DIR and optional SESSION-ID."

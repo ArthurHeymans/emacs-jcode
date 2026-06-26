@@ -371,6 +371,23 @@
             (search-forward "◌")
               (should (eq (get-text-property (1- (point)) 'font-lock-face)
                         'jcode-tool-running-face))))
+	      (kill-buffer chat))))
+
+(ert-deftest jcode-live-tool-updates-reuse-row-and-finish-icon ()
+  (let ((chat (generate-new-buffer " *jcode-test-live-tool-update-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((type . "tool_start") (id . "tool-1") (name . "bash")))
+          (jcode-render-tool chat '((type . "tool_done")
+                                    (id . "tool-1")
+                                    (name . "bash")
+                                    (output . "ok"))
+                             t)
+          (with-current-buffer chat
+            (should (= (how-many "bash" (point-min) (point-max)) 1))
+            (should (string-match-p "✓ bash" (buffer-string)))
+            (should-not (string-match-p "◌ bash" (buffer-string)))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-tool-row-summarizes-native-tui-common-tools ()
@@ -570,6 +587,29 @@
             (jcode-native--handle-event connection '((type . "tool_start") (name . "bash")))
             (with-current-buffer input
               (should (string-match-p "tool:bash" (jcode--header-line))))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-session-renamed-updates-title-and-buffer-names ()
+  (let ((chat (generate-new-buffer " *jcode-test-rename-chat*"))
+        (input (generate-new-buffer " *jcode-test-rename-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection
+                             :chat chat :input input :session-id "s-rename")))
+            (with-current-buffer chat (setq jcode--display-session-id "s-rename"))
+            (cl-letf (((symbol-function 'jcode-refresh-session-list-buffers) #'ignore))
+              (jcode-native--handle-event
+               connection '((type . "session_renamed")
+                            (display_title . "New Name"))))
+            (with-current-buffer chat
+              (should (equal jcode--display-title "New Name"))
+              (should (string-match-p "New Name" (buffer-name))))
+            (with-current-buffer input
+              (should (equal jcode--display-title "New Name"))
+              (should (string-match-p "New Name" (buffer-name))))))
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
 
@@ -1011,17 +1051,22 @@
             (jcode-input-mode)
             (setq jcode--chat-buffer chat)
             (jcode-select-transport "websocket")
-            (jcode-select-premium-mode "zero")
-            (jcode-set-feature "memory" t)
-            (jcode-select-feature-state "swarm" "off"))
-          (should (member '("set_transport" :transport "websocket") sent))
-          (should (member '("set_premium_mode" :mode 2) sent))
-          (should (member '("set_feature" :feature "memory" :enabled t) sent))
-          (should (member '("set_feature" :feature "swarm" :enabled nil) sent))
-          (with-current-buffer chat
-            (should (equal jcode--display-transport "websocket"))
-            (should (equal jcode--display-premium-mode "zero"))
-            (should (equal (cdr (assoc "memory" jcode--display-feature-states)) "on"))
+	            (jcode-select-premium-mode "zero")
+	            (jcode-set-feature "memory" t)
+	            (jcode-select-feature-state "swarm" "off")
+                    (cl-letf (((symbol-function 'jcode-refresh-session-list-buffers) #'ignore))
+                      (jcode-rename-session "Renamed Session")))
+	          (should (member '("set_transport" :transport "websocket") sent))
+	          (should (member '("set_premium_mode" :mode 2) sent))
+	          (should (member '("set_feature" :feature "memory" :enabled t) sent))
+	          (should (member '("set_feature" :feature "swarm" :enabled nil) sent))
+                  (should (member '("rename_session" :title "Renamed Session") sent))
+	          (with-current-buffer chat
+	            (should (equal jcode--display-transport "websocket"))
+	            (should (equal jcode--display-premium-mode "zero"))
+	            (should (equal jcode--display-title "Renamed Session"))
+	            (should (string-match-p "Renamed Session" (buffer-name)))
+	            (should (equal (cdr (assoc "memory" jcode--display-feature-states)) "on"))
             (should (equal (cdr (assoc "swarm" jcode--display-feature-states)) "off"))))
       (kill-buffer chat)
       (kill-buffer input))))

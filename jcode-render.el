@@ -104,12 +104,19 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
 (defun jcode-render-tool (chat params &optional update)
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
   (let* ((name (or (jcode--alist-get-any '(name title toolCallId toolCallId) params) "tool"))
-         (status (or (jcode--alist-get-any '(status state) params) (if update "update" "start")))
+         (event-type (jcode--alist-get-any '(type) params))
+         (status (or (jcode--alist-get-any '(status state) params)
+                     (pcase event-type
+                       ("tool_done" "done")
+                       ("tool_exec" "running")
+                       ("tool_input" "update")
+                       (_ (if update "update" "start")))))
+         (native-id (jcode--alist-get-any '(id tool_call_id toolCallId) params))
          (input (jcode--tool-input params))
          (intent (jcode--alist-get-any '(intent description) params))
          (text (jcode--sanitize-text (jcode--tool-output-text params)))
          (display (jcode--tool-display-text name text input)))
-    (jcode--insert-tool-block chat name status display input intent text)))
+    (jcode--upsert-tool-block chat native-id name status display input intent text)))
 
 (defun jcode--tool-input (params)
   "Extract structured tool input from PARAMS, if present."
@@ -148,6 +155,14 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
               (and (overlay-get overlay 'jcode-tool-block)
                    (equal (overlay-get overlay 'jcode-tool-block-id) id)))
             (overlays-in (point-min) (point-max))))
+
+(defun jcode--tool-block-overlay-by-native-id (native-id)
+  "Return live jcode tool block overlay with NATIVE-ID in current buffer."
+  (when native-id
+    (seq-find (lambda (overlay)
+                (and (overlay-get overlay 'jcode-tool-block)
+                     (equal (overlay-get overlay 'jcode-native-tool-id) native-id)))
+              (overlays-in (point-min) (point-max)))))
 
 (defun jcode--markdown-fence-delimiter (text)
   "Return a markdown fence delimiter safe for TEXT."
@@ -635,7 +650,30 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
       (jcode--toggle-tool-overlay overlay)
     (message "No collapsible jcode block at point")))
 
-(defun jcode--insert-tool-block (chat name status text &optional input intent raw-output)
+(defun jcode--update-tool-overlay (overlay name status text input intent raw-output)
+  "Update existing tool OVERLAY with latest NAME, STATUS, TEXT, INPUT, and INTENT."
+  (overlay-put overlay 'jcode-icon-face (jcode--tool-status-icon-face status text))
+  (overlay-put overlay 'jcode-token-badge (jcode--tool-output-token-badge (or raw-output text)))
+  (overlay-put overlay 'jcode-display-name (jcode--tool-display-name name))
+  (overlay-put overlay 'jcode-summary (jcode--tool-summary name status text input intent))
+  (overlay-put overlay 'jcode-full-text (or text ""))
+  (overlay-put overlay 'jcode-body-kind (jcode--tool-body-kind name text))
+  (when (member (downcase (or status "")) '("done" "complete" "completed" "success" "error" "failed" "fail"))
+    (overlay-put overlay 'jcode-collapsed
+                 (and (jcode--tool-lines text)
+                      (not (and (eq (overlay-get overlay 'jcode-body-kind) 'diff)
+                                (jcode--edit-update-tool-name-p name))))))
+  (jcode--render-tool-body overlay))
+
+(defun jcode--upsert-tool-block (chat native-id name status text &optional input intent raw-output)
+  "Insert or update a native-TUI-like collapsible tool block into CHAT."
+  (when (buffer-live-p chat)
+    (with-current-buffer chat
+      (if-let ((overlay (jcode--tool-block-overlay-by-native-id native-id)))
+          (jcode--update-tool-overlay overlay name status text input intent raw-output)
+        (jcode--insert-tool-block chat native-id name status text input intent raw-output)))))
+
+(defun jcode--insert-tool-block (chat native-id name status text &optional input intent raw-output)
   "Insert a native-TUI-like collapsible tool block into CHAT."
   (when (buffer-live-p chat)
     (jcode--append-to-buffer-preserving-scroll
@@ -654,9 +692,11 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
                                                  (jcode--edit-update-tool-name-p name)))))
 	       (overlay (make-overlay start start nil nil nil))
 	       (id (cl-incf jcode--tool-block-counter)))
-	    (overlay-put overlay 'jcode-tool-block t)
-	    (overlay-put overlay 'jcode-tool-block-id id)
-	    (overlay-put overlay 'jcode-icon-face icon-face)
+		    (overlay-put overlay 'jcode-tool-block t)
+		    (overlay-put overlay 'jcode-tool-block-id id)
+                    (when native-id
+                      (overlay-put overlay 'jcode-native-tool-id native-id))
+		    (overlay-put overlay 'jcode-icon-face icon-face)
 	    (overlay-put overlay 'jcode-token-badge badge)
 	    (overlay-put overlay 'jcode-display-name display-name)
 	    (overlay-put overlay 'jcode-summary summary)

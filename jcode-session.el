@@ -353,6 +353,13 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                 (jcode-list-sessions-data jcode--session-list-directory)))
   (tabulated-list-print t))
 
+(defun jcode-refresh-session-list-buffers ()
+  "Refresh all open `jcode-list-mode' buffers."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'jcode-list-mode)
+        (jcode-list-refresh)))))
+
 (defun jcode-list-mark ()
   "Mark the session at point and move to the next row."
   (interactive)

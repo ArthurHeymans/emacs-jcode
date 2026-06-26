@@ -541,9 +541,14 @@ and STATE is \"on\" or \"off\"."
           buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
        (jcode-render-tool chat event t))
       ("session_renamed"
-       (dolist (buffer (list (jcode-native-connection-chat connection)
-                             (jcode-native-connection-input connection)))
-         (jcode--set-display-metadata buffer :title (alist-get 'display_title event))))
+       (let* ((title (or (alist-get 'display_title event)
+                         (alist-get 'title event)))
+              (chat (jcode-native-connection-chat connection))
+              (input (jcode-native-connection-input connection)))
+         (dolist (buffer (list chat input))
+           (jcode--set-display-metadata buffer :title title))
+         (jcode--rename-display-buffers chat input title)
+         (jcode-refresh-session-list-buffers)))
       ("error" (jcode-render-error chat (or (alist-get 'message event) (format "%S" event))))
       (_ nil))))
 
