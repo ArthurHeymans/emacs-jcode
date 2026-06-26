@@ -577,6 +577,56 @@
     (should (equal (aref (cadr (jcode--session-list-entry info)) 1)
                    "Crashed: Terminal or window closed (SIGHUP)"))))
 
+(ert-deftest jcode-empty-session-detection-hides-system-only-sessions ()
+  (let* ((root (make-temp-file "jcode-empty-sessions" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (system-file (expand-file-name "empty.json" root))
+         (real-file (expand-file-name "real.json" root))
+         (saved-file (expand-file-name "saved.json" root)))
+    (unwind-protect
+        (progn
+          (write-region
+           "{\"id\":\"empty\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           nil system-file)
+          (write-region
+           "{\"id\":\"real\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}]}"
+           nil real-file)
+          (write-region
+           "{\"id\":\"saved\",\"saved\":true,\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           nil saved-file)
+          (let ((ids (mapcar #'jcode-session-info-id (jcode-list-sessions-data root))))
+            (should-not (member "empty" ids))
+            (should (member "real" ids))
+            (should (member "saved" ids)))
+          (let ((jcode-hide-empty-sessions nil))
+            (should (jcode--session-empty-p (jcode--read-session-info system-file)))
+            (should-not (jcode--session-empty-p (jcode--read-session-info real-file)))
+            (should-not (jcode--session-empty-p (jcode--read-session-info saved-file)))))
+      (delete-directory root t))))
+
+(ert-deftest jcode-prune-empty-sessions-deletes-only-closed-empty-files ()
+  (let* ((root (make-temp-file "jcode-prune-sessions" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (closed-empty (expand-file-name "closed-empty.json" root))
+         (active-empty (expand-file-name "active-empty.json" root))
+         (closed-real (expand-file-name "closed-real.json" root)))
+    (unwind-protect
+        (progn
+          (write-region
+           "{\"id\":\"closed-empty\",\"status\":\"Closed\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           nil closed-empty)
+          (write-region
+           "{\"id\":\"active-empty\",\"status\":\"Active\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           nil active-empty)
+          (write-region
+           "{\"id\":\"closed-real\",\"status\":\"Closed\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}]}"
+           nil closed-real)
+          (jcode-prune-empty-sessions root)
+          (should-not (file-exists-p closed-empty))
+          (should (file-exists-p active-empty))
+          (should (file-exists-p closed-real)))
+      (delete-directory root t))))
+
 (ert-deftest jcode-native-json-read-parses-history ()
   (let ((event (jcode-native--json-read
                 "{\"type\":\"history\",\"provider_model\":\"gpt\",\"messages\":[{\"role\":\"assistant\",\"content\":\"hello\"}]}")))

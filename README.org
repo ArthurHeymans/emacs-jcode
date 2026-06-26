@@ -11,9 +11,9 @@ This is currently an early direct-ACP implementation with a Pi-like two-buffer l
 - path completion via =TAB= for =./=, =../=, =~/=, and =/= paths
 - cancel and disconnect commands
 - attach/resume by session id, using ACP-compatible =cwd= and prompt content blocks
-- completion picker and tabulated list for previous jcode sessions from =~/.jcode/sessions=
+- previous-session picker/list hides empty system-only sessions by default to avoid clutter
 - =jcode-current= to reconnect to the latest session for the current project
-- Pi-like header line with current session/status/model/project metadata
+- Pi-like input header with provider, model, reasoning, live ownership, context, and session usage metadata
 - tree-sitter markdown rendering for chat buffers via =md-ts-mode= when available, with hidden markup like Pi
 - native jcode TUI palette: user blue, assistant green, tools gray, accent purple, dim metadata, and green/red/amber/cyan tool status icons
 - compact tool rows by default, like the TUI; rows show concise input summaries (for example =$ command=, paths, URLs, or search queries), and output is hidden until =TAB= or click expands it
@@ -44,12 +44,12 @@ Commands:
 - =C-u M-x jcode-current= resumes the globally latest known session.
 - =M-x jcode-connect=, also =M-x jcode-attach=, connects to a session through the native socket and requests takeover for live updates.
 - =M-x jcode-reconnect= from a jcode chat/input reconnects the current session with native takeover, useful after another UI client owns the stream.
-- =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay or =r= to resume without replay.
+- =M-x jcode-list= opens a tabulated previous-session list.  Press =RET= to load with history replay, =r= to resume without replay, or =P= to prune closed empty session files.
 - =M-x jcode-resume= picks a session id and resumes without full replay.
 - =C-u M-x jcode-resume= loads with history replay.
 - =M-x jcode-plan= opens the implementation plan.
 
-Chat and input buffers show a compact header with session title/id, status, model, and project directory.  Keybindings remain available via mode maps, but are not shown in the header.
+The input buffer header shows provider/credential, model, reasoning effort, live ownership/client count when known, context usage, and session output/cache usage.  Empty system-only sessions are hidden from pickers by default; use =M-x jcode-prune-empty-sessions=, or =P= in =jcode-list=, to delete closed empty session files explicitly.
 
 Input buffer keys:
 

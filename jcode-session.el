@@ -22,9 +22,16 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   :type '(choice (const :tag "Default ~/.jcode/sessions" nil) directory)
   :group 'jcode)
 
+(defcustom jcode-hide-empty-sessions t
+  "Whether session lists hide sessions with no real conversation.
+An empty session is one whose persisted messages are only system/context
+messages, which are commonly created by opening jcode and doing nothing."
+  :type 'boolean
+  :group 'jcode)
+
 (cl-defstruct (jcode-session-info (:constructor jcode--make-session-info))
   id title short-name working-dir status model provider updated-at created-at file
-  last-pid server-name)
+  last-pid server-name message-count conversation-count saved)
 
 (defvar-local jcode--session-list-directory nil)
 
@@ -66,6 +73,26 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   (or (alist-get key alist)
       (alist-get (if (symbolp key) (symbol-name key) (intern key)) alist nil nil #'equal)))
 
+(defun jcode--message-display-role (message)
+  "Return display role for persisted MESSAGE."
+  (or (jcode--safe-alist-get 'display_role message)
+      (jcode--safe-alist-get 'displayRole message)))
+
+(defun jcode--conversation-message-p (message)
+  "Return non-nil if persisted MESSAGE is real conversation content."
+  (let ((role (jcode--safe-alist-get 'role message))
+        (display-role (jcode--message-display-role message)))
+    (not (or (equal display-role "system")
+             (equal role "system")))))
+
+(defun jcode--session-empty-p (info)
+  "Return non-nil if INFO has no real conversation messages.
+Only classify sessions as empty when the persisted file explicitly included a
+message list.  Older/minimal metadata files without messages are kept visible."
+  (and (not (jcode-session-info-saved info))
+       (numberp (jcode-session-info-message-count info))
+       (= (or (jcode-session-info-conversation-count info) 0) 0)))
+
 (defun jcode--read-session-info (file)
   "Read jcode session metadata from FILE."
   (condition-case nil
@@ -78,7 +105,13 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
                (json-key-type 'symbol)
                (data (json-read))
                (id (or (jcode--safe-alist-get 'id data)
-                       (file-name-base file))))
+                       (file-name-base file)))
+               (messages-cell (assq 'messages data))
+               (messages (cdr messages-cell))
+               (message-count (and messages-cell (listp messages) (length messages)))
+               (conversation-count (and messages-cell (listp messages)
+                                        (length (cl-remove-if-not
+                                                 #'jcode--conversation-message-p messages)))))
           (when id
             (jcode--make-session-info
              :id id
@@ -91,7 +124,10 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
              :updated-at (jcode--safe-alist-get 'updated_at data)
              :created-at (jcode--safe-alist-get 'created_at data)
              :file file
-             :last-pid (jcode--safe-alist-get 'last_pid data)))))
+             :last-pid (jcode--safe-alist-get 'last_pid data)
+             :message-count message-count
+             :conversation-count conversation-count
+             :saved (jcode--safe-alist-get 'saved data)))))
     (error nil)))
 
 (defun jcode--session-status-string (status)
@@ -129,8 +165,11 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   (let ((dir (jcode--sessions-directory directory)))
     (when (file-directory-p dir)
       (sort (jcode--annotate-session-server-names
-             (delq nil (mapcar #'jcode--read-session-info
-                               (directory-files dir t "\\.json\\'" t)))
+             (cl-remove-if (lambda (info)
+                             (and jcode-hide-empty-sessions
+                                  (jcode--session-empty-p info)))
+                           (delq nil (mapcar #'jcode--read-session-info
+                                             (directory-files dir t "\\.json\\'" t))))
              directory)
             (lambda (a b)
               (string> (or (jcode-session-info-updated-at a) "")
@@ -210,6 +249,32 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                 (jcode-list-sessions-data jcode--session-list-directory)))
   (tabulated-list-print t))
 
+(defun jcode-prune-empty-sessions (&optional directory)
+  "Delete closed empty session files for DIRECTORY.
+This never deletes saved sessions or sessions whose persisted status is Active."
+  (interactive)
+  (let* ((jcode-hide-empty-sessions nil)
+         (sessions (jcode-list-sessions-data (or directory default-directory)))
+         (empty-closed (cl-remove-if-not
+                        (lambda (info)
+                          (and (jcode--session-empty-p info)
+                               (equal (jcode-session-info-status info) "Closed")
+                               (jcode-session-info-file info)))
+                        sessions)))
+    (if (not empty-closed)
+        (message "Jcode: no closed empty sessions to prune")
+      (when (or noninteractive
+                (yes-or-no-p (format "Delete %d closed empty jcode session file%s? "
+                                     (length empty-closed)
+                                     (if (= (length empty-closed) 1) "" "s"))))
+        (dolist (info empty-closed)
+          (delete-file (jcode-session-info-file info)))
+        (when (derived-mode-p 'jcode-list-mode)
+          (jcode-list-refresh))
+        (message "Jcode: pruned %d empty session%s"
+                 (length empty-closed)
+                 (if (= (length empty-closed) 1) "" "s"))))))
+
 (defun jcode-apply-session-info-to-buffers (session-id chat input)
   "Apply discovered SESSION-ID metadata to CHAT and INPUT buffers."
   (when-let ((info (cl-find session-id (jcode-list-sessions-data default-directory)
@@ -228,6 +293,7 @@ With prefix argument RESUME-ONLY, attach without replay."
 (defvar jcode-list-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "g") #'jcode-list-refresh)
+    (define-key map (kbd "P") #'jcode-prune-empty-sessions)
     (define-key map (kbd "RET") #'jcode-list-open)
     (define-key map (kbd "r") (lambda () (interactive) (jcode-list-open t)))
     (define-key map (kbd "q") #'quit-window)
