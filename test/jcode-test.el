@@ -734,7 +734,7 @@
     (unwind-protect
         (progn
           (write-region
-           "{\"id\":\"empty\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           "{\"id\":\"empty\",\"saved\":false,\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
            nil system-file)
           (write-region
            "{\"id\":\"real\",\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]},{\"role\":\"assistant\",\"content\":\"hello\"}]}"
@@ -772,7 +772,7 @@
     (unwind-protect
         (progn
           (write-region
-           "{\"id\":\"closed-empty\",\"status\":\"Closed\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
+           "{\"id\":\"closed-empty\",\"saved\":false,\"status\":\"Closed\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
            nil closed-empty)
           (write-region
            "{\"id\":\"active-empty\",\"status\":\"Active\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"

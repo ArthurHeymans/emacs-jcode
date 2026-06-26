@@ -82,6 +82,10 @@ messages, which are commonly created by opening jcode and doing nothing."
   (or (alist-get key alist)
       (alist-get (if (symbolp key) (symbol-name key) (intern key)) alist nil nil #'equal)))
 
+(defun jcode--json-true-p (value)
+  "Return non-nil only when JSON VALUE represents true."
+  (eq value t))
+
 (defun jcode--message-display-role (message)
   "Return display role for persisted MESSAGE."
   (or (jcode--safe-alist-get 'display_role message)
@@ -145,7 +149,7 @@ message list.  Older/minimal metadata files without messages are kept visible."
              :message-count message-count
              :conversation-count conversation-count
              :user-turn-count user-turn-count
-             :saved (jcode--safe-alist-get 'saved data)))))
+             :saved (jcode--json-true-p (jcode--safe-alist-get 'saved data))))))
     (error nil)))
 
 (defun jcode--session-status-string (status)
