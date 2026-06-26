@@ -27,6 +27,10 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
 (defvar-local jcode--tool-block-counter 0
   "Monotonic counter for jcode tool block ids in the current chat buffer.")
 
+(defconst jcode--edit-tool-names
+  '("apply_patch" "patch" "edit" "write" "multiedit")
+  "Tool names whose input/output should be presented as code changes.")
+
 (defun jcode--sanitize-text (text)
   "Strip terminal control sequences and undesirable control chars from TEXT."
   (when text
@@ -100,8 +104,9 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
          (status (or (jcode--alist-get-any '(status state) params) (if update "update" "start")))
          (input (jcode--tool-input params))
          (intent (jcode--alist-get-any '(intent description) params))
-         (text (jcode--tool-output-text params)))
-    (jcode--insert-tool-block chat name status (jcode--sanitize-text text) input intent)))
+         (text (jcode--sanitize-text (jcode--tool-output-text params)))
+         (display (jcode--tool-display-text name text input)))
+    (jcode--insert-tool-block chat name status display input intent text)))
 
 (defun jcode--tool-input (params)
   "Extract structured tool input from PARAMS, if present."
@@ -153,6 +158,85 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
       (let ((fence (jcode--markdown-fence-delimiter text)))
         (format "%s\n%s\n%s\n" fence (string-trim-right text) fence))
     ""))
+
+(defun jcode--diff-text-p (text)
+  "Return non-nil if TEXT looks like a patch or unified diff."
+  (and (stringp text)
+       (string-match-p
+        (rx line-start (or "diff --git" "*** Begin Patch" "--- " "+++ " "@@"))
+        text)))
+
+(defun jcode--edit-tool-name-p (name)
+  "Return non-nil when NAME is an edit/apply/write tool."
+  (member (downcase (format "%s" name)) jcode--edit-tool-names))
+
+(defun jcode--tool-input-patch-text (input)
+  "Return patch text embedded in tool INPUT, when present."
+  (or (jcode--tool-input-string input 'patch_text)
+      (jcode--tool-input-string input 'patch)
+      (jcode--tool-input-string input 'diff)))
+
+(defun jcode--tool-display-text (name output input)
+  "Return preferred expanded display text for tool NAME with OUTPUT and INPUT.
+Edit tools prefer their patch/diff input over terse success output, mirroring
+the native TUI's inline-diff expansion behavior."
+  (let ((patch (jcode--tool-input-patch-text input)))
+    (cond
+     ((and (jcode--edit-tool-name-p name)
+           patch
+           (not (string-empty-p (string-trim patch))))
+      (jcode--sanitize-text patch))
+     (t output))))
+
+(defun jcode--diff-counts (text)
+  "Return (ADDITIONS . DELETIONS) for diff-like TEXT."
+  (let ((adds 0)
+        (dels 0))
+    (dolist (line (jcode--tool-lines text))
+      (cond
+       ((and (string-prefix-p "+" line)
+             (not (string-prefix-p "+++" line)))
+        (setq adds (1+ adds)))
+       ((and (string-prefix-p "-" line)
+             (not (string-prefix-p "---" line)))
+        (setq dels (1+ dels)))))
+    (cons adds dels)))
+
+(defun jcode--tool-body-kind (name text)
+  "Return render kind for tool NAME expanded TEXT."
+  (if (or (jcode--diff-text-p text)
+          (jcode--edit-tool-name-p name))
+      'diff
+    'code))
+
+(defun jcode--propertize-diff-body (body)
+  "Apply native-TUI-inspired add/delete faces to diff BODY."
+  (with-temp-buffer
+    (insert body)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (let ((face (cond
+                   ((looking-at-p "^+[^+]") 'jcode-tool-success-face)
+                   ((looking-at-p "^-[^-]") 'jcode-tool-error-face)
+                   ((looking-at-p "^@@") 'jcode-accent-face)
+                   ((looking-at-p "^\\(?:diff --git\\|--- \\|+++ \\|\\*\\*\\* \\|---\\|+++\\)")
+                    'jcode-dim-face))))
+        (when face
+          (add-text-properties (line-beginning-position) (line-end-position)
+                               `(font-lock-face ,face))))
+      (forward-line 1))
+    (buffer-string)))
+
+(defun jcode--tool-block-body-for-kind (text kind)
+  "Return rendered body for TEXT of KIND."
+  (cond
+   ((not (and text (not (string-empty-p text)))) "")
+   ((eq kind 'diff)
+    (concat (propertize "┌─ diff\n" 'font-lock-face 'jcode-dim-face)
+            (jcode--propertize-diff-body (string-trim-right text))
+            "\n"
+            (propertize "└─\n" 'font-lock-face 'jcode-dim-face)))
+   (t (jcode--tool-block-body text))))
 
 (defun jcode--tool-lines (text)
   "Return non-empty output lines for TEXT."
@@ -406,17 +490,25 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 
 (defun jcode--tool-summary (name status text input intent)
   "Return a compact TUI-like tool summary."
-  (let ((lines (length (jcode--tool-lines text)))
-        (input-summary (jcode--tool-input-summary name input intent)))
+  (let* ((lines (length (jcode--tool-lines text)))
+         (input-summary (jcode--tool-input-summary name input intent))
+         (diff-counts (and (jcode--edit-tool-name-p name)
+                           (jcode--diff-counts text)))
+         (diff-suffix (and diff-counts
+                           (or (> (car diff-counts) 0) (> (cdr diff-counts) 0))
+                           (format " (+%d -%d)" (car diff-counts) (cdr diff-counts)))))
     (cond
      ((and intent (stringp intent) (not (string-empty-p (string-trim intent))))
-      (if (and input-summary (not (string-empty-p input-summary)))
-          (format "%s · %s" (string-trim intent) input-summary)
-        (string-trim intent)))
-     ((and input-summary (not (string-empty-p input-summary))) input-summary)
+      (concat (if (and input-summary (not (string-empty-p input-summary)))
+                  (format "%s · %s" (string-trim intent) input-summary)
+                (string-trim intent))
+              diff-suffix))
+     ((and input-summary (not (string-empty-p input-summary)))
+      (concat input-summary diff-suffix))
      ((and status (string-match-p (regexp-opt '("running" "start" "update" "pending")) (downcase status)))
       status)
-     ((> lines 0) (format "%d line%s hidden" lines (if (= lines 1) "" "s")))
+     ((> lines 0) (concat (format "%d line%s hidden" lines (if (= lines 1) "" "s"))
+                          diff-suffix))
      (t status))))
 
 (defun jcode--insert-tool-toggle-button (label overlay)
@@ -441,12 +533,14 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
          (preview (jcode--tool-preview text jcode-tool-show-preview-lines))
          (display-text (if collapsed (car preview) text))
          (hidden (cdr preview))
-         (inhibit-read-only t))
+         (kind (overlay-get overlay 'jcode-body-kind))
+         (inhibit-read-only t)
+         (buffer-read-only nil))
     (save-excursion
       (goto-char header-end)
       (delete-region header-end (overlay-end overlay))
       (unless (or (not display-text) (string-empty-p display-text))
-        (insert (jcode--tool-block-body display-text)))
+        (insert (jcode--tool-block-body-for-kind display-text kind)))
       (when (or (> hidden 0) (and collapsed (jcode--tool-lines text)))
         (jcode--insert-tool-toggle-button
          (if collapsed
@@ -469,7 +563,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
       (jcode--toggle-tool-overlay overlay)
     (message "No collapsible jcode block at point")))
 
-(defun jcode--insert-tool-block (chat name status text &optional input intent)
+(defun jcode--insert-tool-block (chat name status text &optional input intent raw-output)
   "Insert a native-TUI-like collapsible tool block into CHAT."
   (when (buffer-live-p chat)
     (with-current-buffer chat
@@ -480,7 +574,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
         (insert "\n")
         (let ((start (point)))
           (let* ((icon-face (jcode--tool-status-icon-face status text))
-                 (badge (jcode--tool-output-token-badge text))
+                 (badge (jcode--tool-output-token-badge (or raw-output text)))
                  (display-name (jcode--tool-display-name name))
                  (summary (jcode--tool-summary name status text input intent)))
             (insert "  "
@@ -503,6 +597,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
             (overlay-put overlay 'jcode-tool-block-id id)
             (overlay-put overlay 'jcode-header-end header-end)
             (overlay-put overlay 'jcode-full-text (or text ""))
+            (overlay-put overlay 'jcode-body-kind (jcode--tool-body-kind name text))
             (overlay-put overlay 'jcode-collapsed collapsed)
             ;; Background only, so markdown/code syntax foregrounds survive.
             (overlay-put overlay 'face 'jcode-tool-block-face)

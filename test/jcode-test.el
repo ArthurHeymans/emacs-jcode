@@ -119,6 +119,48 @@
             (should (string-match-p "expand output" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-tool-block-expands-when-buffer-is-read-only ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-read-only-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "done")
+                                    (text . "one\ntwo")))
+          (with-current-buffer chat
+            (setq buffer-read-only t)
+            (goto-char (point-min))
+            (search-forward "bash")
+            (jcode-toggle-block)
+            (should (string-match-p "one" (buffer-string)))
+            (should buffer-read-only)))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-edit-tool-expands-to-diff-with-native-style-faces ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-diff-chat*"))
+        (patch "*** Begin Patch\n*** Update File: foo.el\n@@\n-old\n+new\n*** End Patch"))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat `((name . "apply_patch")
+                                    (status . "done")
+                                    (output . "Done")
+                                    (input . ((patch_text . ,patch)))))
+          (with-current-buffer chat
+            (should (string-match-p (regexp-quote "(+1 -1)") (buffer-string)))
+            (should-not (string-match-p "old" (buffer-string)))
+            (goto-char (point-min))
+            (search-forward "edit")
+            (jcode-toggle-block)
+            (should (string-match-p "┌─ diff" (buffer-string)))
+            (search-forward "+new")
+            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
+                        'jcode-tool-success-face))
+            (search-backward "-old")
+            (should (eq (get-text-property (line-beginning-position) 'font-lock-face)
+                        'jcode-tool-error-face))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-summary-chat*")))
     (unwind-protect
