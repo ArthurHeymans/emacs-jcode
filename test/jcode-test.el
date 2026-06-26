@@ -390,6 +390,24 @@
             (should-not (string-match-p "◌ bash" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-native-tool-input-does-not-render-update-row ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-input-chat*"))
+        (input (generate-new-buffer " *jcode-test-tool-input-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode-native--handle-event connection '((type . "tool_start") (id . "t1") (name . "bash")))
+            (jcode-native--handle-event connection '((type . "tool_input") (delta . "{\"command\":")))
+            (jcode-native--handle-event connection '((type . "tool_done") (id . "t1") (name . "bash") (output . "ok")))
+            (with-current-buffer chat
+              (should (= (how-many "bash" (point-min) (point-max)) 1))
+              (should (string-match-p "✓ bash" (buffer-string)))
+              (should-not (string-match-p "update" (buffer-string))))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest jcode-tool-row-summarizes-native-tui-common-tools ()
   (should (equal (jcode--tool-input-summary
                   "browser" '((action . "open")

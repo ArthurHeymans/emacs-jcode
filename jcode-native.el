@@ -526,8 +526,7 @@ and STATE is \"on\" or \"off\"."
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))
          (jcode--set-display-metadata
-          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event)))))
-       (jcode-render-tool chat event t))
+          buffer :activity `((is_processing . t) (current_tool_name . ,(alist-get 'name event))))))
       ("tool_exec"
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))
