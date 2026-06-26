@@ -33,15 +33,55 @@
                   (session-id cwd chat input))
 (declare-function jcode-native-close "jcode-native" (connection))
 
+(defun jcode--get-chat-buffer ()
+  "Return the chat buffer for the current jcode session.
+Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
+  (cond
+   ((derived-mode-p 'jcode-chat-mode) (current-buffer))
+   ((and (boundp 'jcode--chat-buffer) (buffer-live-p jcode--chat-buffer))
+    jcode--chat-buffer)))
+
+(defun jcode--get-input-buffer ()
+  "Return the input buffer for the current jcode session.
+Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
+  (cond
+   ((derived-mode-p 'jcode-input-mode) (current-buffer))
+   ((and (boundp 'jcode--input-buffer) (buffer-live-p jcode--input-buffer))
+    jcode--input-buffer)))
+
+(defun jcode--pair-from-project-buffers ()
+  "Return a live jcode buffer pair for the current project, if one exists."
+  (catch 'pair
+    (dolist (chat (jcode-project-buffers))
+      (when-let ((input (buffer-local-value 'jcode--input-buffer chat)))
+        (when (buffer-live-p input)
+          (throw 'pair (cons chat input)))))))
+
+(defun jcode--input-buffer-for-chat (chat)
+  "Return an input buffer linked back to CHAT, if any."
+  (catch 'input
+    (dolist (buffer (buffer-list))
+      (when (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (and (derived-mode-p 'jcode-input-mode)
+                        (eq jcode--chat-buffer chat))))
+        (throw 'input buffer)))))
+
 (defun jcode--current-buffer-pair ()
   "Return current jcode buffer pair as (CHAT . INPUT), if any."
-  (cond
-   ((derived-mode-p 'jcode-chat-mode)
-    (and (buffer-live-p jcode--input-buffer)
-         (cons (current-buffer) jcode--input-buffer)))
-   ((derived-mode-p 'jcode-input-mode)
-    (and (buffer-live-p jcode--chat-buffer)
-         (cons jcode--chat-buffer (current-buffer))))))
+  (when (derived-mode-p 'jcode-chat-mode 'jcode-input-mode)
+    (let ((chat (jcode--get-chat-buffer))
+          (input (jcode--get-input-buffer)))
+      (cond
+       ((and (buffer-live-p chat) (buffer-live-p input))
+        (cons chat input))
+       ((derived-mode-p 'jcode-chat-mode)
+        ;; Older/reloaded buffers may have lost the chat->input link.  Recover
+        ;; from the input backlink first, then the project pair, instead of
+        ;; creating or jumping to another session.
+        (if-let ((linked-input (jcode--input-buffer-for-chat (current-buffer))))
+            (cons (current-buffer) linked-input)
+          (jcode--pair-from-project-buffers)))))))
 
 (defun jcode-project-buffers (&optional directory)
   "Return live jcode chat buffers for DIRECTORY's project.

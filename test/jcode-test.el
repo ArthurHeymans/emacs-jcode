@@ -212,6 +212,52 @@
     (should-error (jcode-native--send connection '(:type "set_model"))
                   :type 'user-error)))
 
+(ert-deftest jcode-command-from-chat-reuses-current-pair ()
+  (let ((chat (generate-new-buffer " *jcode-test-command-chat*"))
+        (input (generate-new-buffer " *jcode-test-command-input*"))
+        shown)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat))
+          (cl-letf (((symbol-function 'jcode--show-session-buffers)
+                     (lambda (shown-chat shown-input)
+                       (setq shown (cons shown-chat shown-input)))))
+            (with-current-buffer chat
+              (jcode)))
+          (should (eq (car shown) chat))
+          (should (eq (cdr shown) input)))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-command-from-chat-recovers-input-backlink ()
+  (let ((chat (generate-new-buffer " *jcode-test-stale-command-chat*"))
+        (input (generate-new-buffer " *jcode-test-stale-command-input*"))
+        shown)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq default-directory "/tmp/"
+                  jcode--input-buffer nil))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq default-directory "/tmp/"
+                  jcode--chat-buffer chat))
+          (cl-letf (((symbol-function 'jcode--show-session-buffers)
+                     (lambda (shown-chat shown-input)
+                       (setq shown (cons shown-chat shown-input)))))
+            (with-current-buffer chat
+              (jcode)))
+          (should (eq (car shown) chat))
+          (should (eq (cdr shown) input)))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
