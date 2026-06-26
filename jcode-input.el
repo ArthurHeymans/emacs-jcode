@@ -240,16 +240,22 @@
       (insert (ring-ref (jcode--input-ring) idx)))))
 
 (defun jcode-history-isearch-backward ()
-  "Search prompt history backward with incremental isearch.
-Matches are loaded directly into the input buffer, like readline history
-search.  Quit restores the input that was present before search started."
+  "Search prompt history and replace the input with the selected prompt.
+The minibuffer completion UI filters incrementally as you type, making this a
+reliable prompt-history search in both existing and newly-created input buffers."
   (interactive)
-  (let ((ring (jcode--input-ring)))
+  (let* ((ring (jcode--input-ring))
+         (saved (buffer-substring-no-properties (point-min) (point-max))))
     (when (ring-empty-p ring) (user-error "No history"))
-    (setq jcode--history-isearch-active t
-          jcode--history-isearch-saved-input (buffer-string)
-          jcode--history-isearch-index nil)
-    (isearch-backward nil t)))
+    (let* ((candidates (delete-dups
+                        (mapcar #'substring-no-properties (ring-elements ring))))
+           (choice (completing-read
+                    "History: " candidates nil t
+                    (unless (string-empty-p (string-trim saved)) saved))))
+      (delete-region (point-min) (point-max))
+      (insert choice)
+      (setq jcode--input-ring-index nil
+            jcode--input-saved nil))))
 
 (defun jcode--history-isearch-setup ()
   "Configure isearch for jcode prompt history search."
