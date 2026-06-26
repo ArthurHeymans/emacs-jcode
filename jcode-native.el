@@ -657,10 +657,11 @@ and STATE is \"on\" or \"off\"."
      :target_session_id session-id
      :client_has_local_history (if jcode-native-take-over-active-session t :false)
      :allow_session_takeover (if jcode-native-take-over-active-session t :false))
-       (setf (jcode-native-connection-poll-timer connection)
-          (run-with-timer jcode-native-poll-interval
-                          jcode-native-poll-interval
-                          #'jcode-native--poll connection))
+    (unless jcode-native-take-over-active-session
+      (setf (jcode-native-connection-poll-timer connection)
+            (run-with-timer jcode-native-poll-interval
+                            jcode-native-poll-interval
+                            #'jcode-native--poll connection)))
     (setf (jcode-native-connection-takeover connection)
           jcode-native-take-over-active-session)
     (dolist (buffer (list chat input))
