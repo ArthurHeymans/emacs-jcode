@@ -203,17 +203,39 @@ because they can correspond to currently open Emacs/TUI windows."
         (setf (jcode-session-info-server-name info) server-name)))
     sessions))
 
+(defun jcode--live-session-user-turn-count (session-id)
+  "Return rendered user-message count for live SESSION-ID buffers, or nil."
+  (catch 'count
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (and (boundp 'jcode--display-session-id)
+                   (equal jcode--display-session-id session-id)
+                   (derived-mode-p 'jcode-chat-mode))
+          (save-excursion
+            (save-restriction
+              (widen)
+              (throw 'count (how-many "^You\n=+\n" (point-min) (point-max))))))))))
+
+(defun jcode--annotate-session-live-counts (sessions)
+  "Annotate SESSIONS with counts from open chat buffers when available."
+  (dolist (info sessions)
+    (when-let* ((id (jcode-session-info-id info))
+                (count (jcode--live-session-user-turn-count id)))
+      (setf (jcode-session-info-user-turn-count info) count)))
+  sessions)
+
 (defun jcode-list-sessions-data (&optional directory)
   "Return discovered jcode session metadata for DIRECTORY's host."
   (let ((dir (jcode--sessions-directory directory)))
     (when (file-directory-p dir)
-      (sort (jcode--annotate-session-server-names
-	      (cl-remove-if (lambda (info)
-			       (and jcode-hide-empty-sessions
-				    (jcode--session-hidden-as-empty-p info)))
-                           (delq nil (mapcar #'jcode--read-session-info
-                                             (directory-files dir t "\\.json\\'" t))))
-             directory)
+      (sort (jcode--annotate-session-live-counts
+             (jcode--annotate-session-server-names
+              (cl-remove-if (lambda (info)
+                              (and jcode-hide-empty-sessions
+                                   (jcode--session-hidden-as-empty-p info)))
+                            (delq nil (mapcar #'jcode--read-session-info
+                                              (directory-files dir t "\\.json\\'" t))))
+              directory))
             (lambda (a b)
               (string> (or (jcode-session-info-updated-at a) "")
                        (or (jcode-session-info-updated-at b) "")))))))

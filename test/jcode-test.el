@@ -846,6 +846,24 @@
             (should (equal (jcode-session-info-user-turn-count info) 2))))
       (delete-directory root t))))
 
+(ert-deftest jcode-session-list-uses-live-rendered-user-count-when-open ()
+  (let* ((root (make-temp-file "jcode-live-turn-count" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (chat (generate-new-buffer " *jcode-test-live-turn-chat*")))
+    (unwind-protect
+        (progn
+          (write-region
+           "{\"id\":\"live\",\"status\":\"Active\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"system\"}]}]}"
+           nil (expand-file-name "live.json" root))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--display-session-id "live")
+            (jcode-render-user chat "actual prompt"))
+          (let ((info (jcode--session-info-by-id "live" root)))
+            (should (equal (jcode-session-info-user-turn-count info) 1))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (delete-directory root t))))
+
 (ert-deftest jcode-prune-empty-sessions-deletes-only-closed-empty-files ()
   (let* ((root (make-temp-file "jcode-prune-sessions" t))
          (jcode-sessions-directory (file-name-as-directory root))
