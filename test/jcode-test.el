@@ -100,6 +100,38 @@
             (should (string-match-p "collapse tool output" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-summary-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "done")
+                                    (input . ((command . "nix flake check")))))
+          (with-current-buffer chat
+            (should (string-match-p "✓ bash" (buffer-string)))
+            (should (string-match-p "\\$ nix flake check" (buffer-string)))
+            (should-not (string-match-p "output hidden" (buffer-string)))
+            (should-not (string-match-p "((command" (buffer-string)))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-tool-row-uses-tui-display-name-and-running-color ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-running-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "webfetch")
+                                    (status . "start")
+                                    (input . ((url . "https://example.com/some/long/path")))))
+          (with-current-buffer chat
+            (should (string-match-p "◌ web" (buffer-string)))
+            (should (string-match-p "https://example.com" (buffer-string)))
+            (goto-char (point-min))
+            (search-forward "◌")
+            (should (eq (get-text-property (1- (point)) 'font-lock-face)
+                        'jcode-tool-running-face))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))

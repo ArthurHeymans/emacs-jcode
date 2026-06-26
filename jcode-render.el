@@ -93,10 +93,20 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
   (let* ((name (or (jcode--alist-get-any '(name title toolCallId toolCallId) params) "tool"))
          (status (or (jcode--alist-get-any '(status state) params) (if update "update" "start")))
+         (input (jcode--tool-input params))
+         (intent (jcode--alist-get-any '(intent description) params))
          (text (or (jcode--event-text params)
-                   (when-let ((raw (jcode--alist-get-any '(rawInput input output) params)))
+                   (when-let ((raw (jcode--alist-get-any '(output rawOutput result) params)))
                      (if (stringp raw) raw (format "%S" raw))))))
-    (jcode--insert-tool-block chat name status (jcode--sanitize-text text))))
+    (jcode--insert-tool-block chat name status (jcode--sanitize-text text) input intent)))
+
+(defun jcode--tool-input (params)
+  "Extract structured tool input from PARAMS, if present."
+  (let ((value (jcode--alist-get-any '(rawInput input args arguments parameters) params)))
+    (cond
+     ((and (listp value) (not (stringp value))) value)
+     ((and (vectorp value) (> (length value) 0)) value)
+     (t nil))))
 
 (defun jcode--tool-block-overlay-at-point ()
   "Return the jcode tool block overlay at point, if any."
@@ -138,12 +148,12 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
   (let ((status (downcase (or status "")))
         (text (or text "")))
     (cond
-     ((or (string-match-p "\(?:error\|fail\|failed\)" status)
+     ((or (string-match-p (regexp-opt '("error" "fail" "failed")) status)
           (string-prefix-p "Error:" text))
       (cons "✗" 'jcode-tool-error-face))
-     ((string-match-p "\(?:running\|start\|update\|pending\)" status)
+     ((string-match-p (regexp-opt '("running" "start" "update" "pending")) status)
       (cons "◌" 'jcode-tool-running-face))
-     ((string-match-p "\(?:warn\|partial\)" status)
+     ((string-match-p (regexp-opt '("warn" "partial")) status)
       (cons "⚠" 'jcode-tool-warning-face))
      (t (cons "✓" 'jcode-tool-success-face)))))
 
@@ -160,11 +170,90 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
            ((>= tokens 8000) 'jcode-tool-warning-face)
            (t 'jcode-tool-face)))))
 
-(defun jcode--tool-summary (_name status text)
-  "Return a compact TUI-like summary for tool STATUS and TEXT."
-  (let ((lines (length (jcode--tool-lines text))))
+(defun jcode--tool-input-value (input key)
+  "Return KEY from structured tool INPUT."
+  (when (listp input)
+    (or (alist-get key input)
+        (alist-get (intern (substring (symbol-name key) 1)) input))))
+
+(defun jcode--tool-input-string (input key)
+  "Return string KEY from structured tool INPUT."
+  (let ((value (jcode--tool-input-value input key)))
     (cond
-     ((and status (string-match-p "\(?:running\|start\|update\|pending\)" (downcase status)))
+     ((stringp value) value)
+     ((numberp value) (number-to-string value))
+     (value (format "%s" value)))))
+
+(defun jcode--tool-input-count (input key)
+  "Return length of vector/list KEY from INPUT."
+  (let ((value (jcode--tool-input-value input key)))
+    (cond
+     ((vectorp value) (length value))
+     ((listp value) (length value)))))
+
+(defun jcode--truncate-end (string width)
+  "Truncate STRING to WIDTH characters with an ellipsis."
+  (let ((string (or string "")))
+    (if (or (not width) (<= (length string) width))
+        string
+      (concat (substring string 0 (max 0 (1- width))) "…"))))
+
+(defun jcode--tool-display-name (name)
+  "Return TUI-like display name for tool NAME."
+  (let ((name (or name "tool")))
+    (pcase name
+      ((or "apply_patch" "patch") "edit")
+      ("multiedit" "edit")
+      ("webfetch" "web")
+      ("websearch" "search")
+      (_ name))))
+
+(defun jcode--tool-input-summary (name input intent)
+  "Return compact TUI-like summary for tool NAME with INPUT and INTENT."
+  (let ((name (downcase (or name ""))))
+    (pcase name
+      ("bash"
+       (when-let ((command (jcode--tool-input-string input 'command)))
+         (format "$ %s" (jcode--truncate-end command (if intent 28 80)))))
+      ((or "read" "write" "edit")
+       (jcode--tool-input-string input 'file_path))
+      ("multiedit"
+       (when-let ((path (jcode--tool-input-string input 'file_path)))
+         (format "%s (%d edits)" path (or (jcode--tool-input-count input 'edits) 0))))
+      ("ls" (or (jcode--tool-input-string input 'path) "."))
+      ("glob"
+       (when-let ((pattern (jcode--tool-input-string input 'pattern)))
+         (format "'%s'" (jcode--truncate-end pattern 60))))
+      ("grep"
+       (when-let ((pattern (jcode--tool-input-string input 'pattern)))
+         (if-let ((path (jcode--tool-input-string input 'path)))
+             (format "'%s' in %s" (jcode--truncate-end pattern 40) path)
+           (format "'%s'" (jcode--truncate-end pattern 60)))))
+      ("agentgrep"
+       (let ((mode (or (jcode--tool-input-string input 'mode) "grep"))
+             (query (jcode--tool-input-string input 'query)))
+         (if (and query (not (string-empty-p query)))
+             (format "%s '%s'" mode (jcode--truncate-end query 50))
+           mode)))
+      ((or "webfetch" "websearch" "codesearch" "session_search" "conversation_search")
+       (when-let ((query (or (jcode--tool-input-string input 'url)
+                             (jcode--tool-input-string input 'query))))
+         (format "'%s'" (jcode--truncate-end query 70))))
+      ("batch"
+       (format "%d calls" (or (jcode--tool-input-count input 'tool_calls) 0)))
+      (_ nil))))
+
+(defun jcode--tool-summary (name status text input intent)
+  "Return a compact TUI-like tool summary."
+  (let ((lines (length (jcode--tool-lines text)))
+        (input-summary (jcode--tool-input-summary name input intent)))
+    (cond
+     ((and intent (stringp intent) (not (string-empty-p (string-trim intent))))
+      (if (and input-summary (not (string-empty-p input-summary)))
+          (format "%s · %s" (string-trim intent) input-summary)
+        (string-trim intent)))
+     ((and input-summary (not (string-empty-p input-summary))) input-summary)
+     ((and status (string-match-p (regexp-opt '("running" "start" "update" "pending")) (downcase status)))
       status)
      ((> lines 0) (format "%d line%s hidden" lines (if (= lines 1) "" "s")))
      (t status))))
@@ -197,8 +286,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
       (when (or (> hidden 0) (and collapsed (jcode--tool-lines text)))
         (jcode--insert-tool-toggle-button
          (if collapsed
-             (format "    ▸ output hidden%s, click or TAB to expand\n"
-                     (if (> hidden 0) (format " · %d more line%s" hidden (if (= hidden 1) "" "s")) ""))
+             "    ▸ expand output\n"
            "▾ collapse tool output\n")
          overlay))
       (move-overlay overlay (overlay-start overlay) (point)))))
@@ -217,8 +305,8 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
       (jcode--toggle-tool-overlay overlay)
     (message "No collapsible jcode block at point")))
 
-(defun jcode--insert-tool-block (chat name status text)
-  "Insert a Pi-like collapsible tool block into CHAT."
+(defun jcode--insert-tool-block (chat name status text &optional input intent)
+  "Insert a native-TUI-like collapsible tool block into CHAT."
   (when (buffer-live-p chat)
     (with-current-buffer chat
       (let ((inhibit-read-only t)
@@ -229,11 +317,12 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
         (let ((start (point)))
           (let* ((icon-face (jcode--tool-status-icon-face status text))
                  (badge (jcode--tool-output-token-badge text))
-                 (summary (jcode--tool-summary name status text)))
+                 (display-name (jcode--tool-display-name name))
+                 (summary (jcode--tool-summary name status text input intent)))
             (insert "  "
                     (propertize (car icon-face) 'font-lock-face (cdr icon-face))
                     " "
-                    (propertize name 'font-lock-face 'jcode-tool-face))
+                    (propertize display-name 'font-lock-face 'jcode-tool-face))
             (when (and summary (not (string-empty-p summary)))
               (insert (propertize " " 'font-lock-face 'jcode-dim-face)
                       (propertize summary 'font-lock-face 'jcode-dim-face)))
