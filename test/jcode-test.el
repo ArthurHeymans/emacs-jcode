@@ -298,6 +298,19 @@
             (should (string-match-p "question\n\nAssistant\n=========" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-assistant-heading-face-does-not-leak-into-markdown ()
+  (let ((chat (generate-new-buffer " *jcode-test-markdown-face-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-assistant-message chat "**bold**\n\n```elisp\n(message \"x\")\n```")
+          (with-current-buffer chat
+            (goto-char (point-min))
+            (search-forward "**bold**")
+            (should-not (eq (get-text-property (match-beginning 0) 'face)
+                            'jcode-assistant-face))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-summary-chat*")))
     (unwind-protect

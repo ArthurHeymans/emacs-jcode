@@ -603,7 +603,7 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
   (jcode--append-to-buffer-preserving-scroll
    buffer
    (lambda ()
-     (insert (if face (propertize text 'face face) text)))))
+     (insert (if face (propertize text 'face face 'rear-nonsticky '(face)) text)))))
 
 (defun jcode--section (buffer title face)
   "Append a section TITLE to BUFFER using FACE."
@@ -621,9 +621,9 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
                         (goto-char (point-max))
                         (looking-back "\n" (max (point-min) (1- (point-max)))))
                       "\n")
-                     (t "\n\n")))
-            (text (format "%s%s\n%s\n" prefix title (make-string (length title) ?=))))
-       (insert (if face (propertize text 'face face) text))))))
+	                     (t "\n\n")))
+	            (text (format "%s%s\n%s\n" prefix title (make-string (length title) ?=))))
+	       (insert (if face (propertize text 'face face 'rear-nonsticky '(face)) text))))))
 
 (provide 'jcode-ui)
 ;;; jcode-ui.el ends here
