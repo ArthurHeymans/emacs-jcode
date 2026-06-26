@@ -1186,6 +1186,27 @@
 (ert-deftest jcode-list-refresh-is-command ()
   (should (commandp #'jcode-list-refresh)))
 
+(ert-deftest jcode-resume-reuses-existing-session-buffer-pair ()
+  (let* ((dir default-directory)
+         (buffers (jcode--make-buffers dir "s-reuse"))
+         (chat (car buffers))
+         (input (cdr buffers))
+         opened displayed)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (setq jcode--display-session-id "s-reuse"))
+          (cl-letf (((symbol-function 'jcode-native-open-session)
+                     (lambda (&rest _args) (setq opened t)))
+                    ((symbol-function 'jcode--display-buffers)
+                     (lambda (shown-chat shown-input)
+                       (setq displayed (cons shown-chat shown-input)))))
+            (should (eq (jcode-resume "s-reuse") chat))
+            (should (equal displayed (cons chat input)))
+            (should-not opened)))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-menu-and-slash-commands-are-wired ()
   (should (commandp #'jcode-menu))
   (should (eq (lookup-key jcode-input-mode-map (kbd "C-c C-p")) #'jcode-menu))

@@ -84,6 +84,19 @@ Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
             (cons (current-buffer) linked-input)
           (jcode--pair-from-project-buffers)))))))
 
+(defun jcode--buffer-pair-for-session-id (session-id)
+  "Return an existing live jcode buffer pair for SESSION-ID, if any."
+  (catch 'pair
+    (dolist (chat (buffer-list))
+      (when (and (buffer-live-p chat)
+                 (with-current-buffer chat
+                   (and (derived-mode-p 'jcode-chat-mode)
+                        (equal jcode--display-session-id session-id))))
+        (when-let ((input (or (buffer-local-value 'jcode--input-buffer chat)
+                              (jcode--input-buffer-for-chat chat))))
+          (when (buffer-live-p input)
+            (throw 'pair (cons chat input))))))))
+
 (defun jcode-project-buffers (&optional directory)
   "Return live jcode chat buffers for DIRECTORY's project.
 Buffers are ordered by `buffer-list' recency, most recent first."
@@ -187,20 +200,22 @@ session immediately."
   "Resume jcode SESSION-ID without replay.
 With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
   (interactive (list (jcode-read-session-id (jcode--project-directory)) current-prefix-arg))
-  (let* ((dir (jcode--project-directory))
-         (buffers (jcode--make-buffers dir session-id))
-         (chat (car buffers))
-         (input (cdr buffers)))
-    (jcode-apply-session-info-to-buffers session-id chat input)
-    (jcode--display-buffers chat input)
-    (when (and full-load (buffer-local-value 'jcode--session chat))
-      (jcode-session-teardown (buffer-local-value 'jcode--session chat))
-      (with-current-buffer chat (setq jcode--session nil))
-      (with-current-buffer input (setq jcode--session nil))
-      (jcode--clear-chat-buffer chat))
-    (unless (buffer-local-value 'jcode--native-connection chat)
-      (jcode-native-open-session session-id dir chat input))
-    chat))
+  (if-let ((existing (jcode--buffer-pair-for-session-id session-id)))
+      (jcode--show-session-buffers (car existing) (cdr existing))
+    (let* ((dir (jcode--project-directory))
+           (buffers (jcode--make-buffers dir session-id))
+           (chat (car buffers))
+           (input (cdr buffers)))
+      (jcode-apply-session-info-to-buffers session-id chat input)
+      (jcode--display-buffers chat input)
+      (when (and full-load (buffer-local-value 'jcode--session chat))
+        (jcode-session-teardown (buffer-local-value 'jcode--session chat))
+        (with-current-buffer chat (setq jcode--session nil))
+        (with-current-buffer input (setq jcode--session nil))
+        (jcode--clear-chat-buffer chat))
+      (unless (buffer-local-value 'jcode--native-connection chat)
+        (jcode-native-open-session session-id dir chat input))
+      chat)))
 
 ;;;###autoload
 (defun jcode-connect (session-id)
