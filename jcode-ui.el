@@ -193,42 +193,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 	            (+ input cache-read cache-creation)
 	          input)))))
 
-(defun jcode--header-model-context-limit ()
-  "Return best-known max context for the current model.
-
-The native history event currently reports token totals but not the provider's
-context window.  The jcode TUI fills this gap for remote sessions via its
-known-model context lookup; keep a small Emacs-side mirror for common jcode
-model families so the input header can still show `ctx current/max'."
-  (or jcode--display-context-window
-      (let* ((model (downcase (format "%s" (or jcode--display-model ""))))
-             (provider (downcase (format "%s" (or jcode--display-provider "")))))
-        (cond
-         ;; Mirrors jcode-provider-core's remote fallback for GPT-5-family
-         ;; models.  Dynamic catalog values still win when the protocol sends
-         ;; an explicit context window.
-         ((string-prefix-p "gpt-5.3-codex-spark" model) 128000)
-         ((or (string-prefix-p "gpt-5.2-chat" model)
-              (string-prefix-p "gpt-5.1-chat" model)
-              (string-prefix-p "gpt-5-chat" model))
-          128000)
-         ((string-prefix-p "gpt-5.4" model) 1000000)
-         ((string-prefix-p "gpt-5" model) 272000)
-         ;; Current Claude TUI defaults are 200K unless explicitly using a
-         ;; long-context variant.  This is intentionally conservative.
-         ((or (string-match-p "claude" provider)
-              (string-prefix-p "claude-" model))
-          200000)
-         ((or (string-prefix-p "gemini-2.0-flash" model)
-              (string-prefix-p "gemini-2.5" model)
-              (string-prefix-p "gemini-3" model))
-          1000000)
-         (t nil)))))
-
 (defun jcode--header-context ()
   "Return observed context/max context usage text for the header."
   (let ((context (jcode--header-effective-context-tokens))
-        (limit (jcode--header-model-context-limit)))
+        (limit jcode--display-context-window))
     (if (and context (numberp limit))
 		(format " │ ctx %s/%s"
 			(jcode--format-token-count context)
