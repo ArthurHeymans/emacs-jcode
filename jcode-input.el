@@ -154,7 +154,7 @@
 (defun jcode--input-slash-command (text)
   "Return known slash command represented by TEXT, or nil."
   (when (and (boundp 'jcode-slash-commands)
-             (string-match-p "\\`/[[:alnum:]_-]+[[:space:]]*\\'" text))
+             (string-match-p "\\`/\\(?:[[:alnum:]_-]+\\|?\\)[[:space:]]*\\'" text))
     (let ((command (car (split-string (string-trim text) "[[:space:]]+" t))))
       (and (assoc command jcode-slash-commands) command))))
 

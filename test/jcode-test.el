@@ -840,8 +840,10 @@
   (should (commandp #'jcode-menu))
   (should (eq (lookup-key jcode-input-mode-map (kbd "C-c C-p")) #'jcode-menu))
   (should (eq (lookup-key jcode-chat-mode-map (kbd "C-c C-p")) #'jcode-menu))
-  (dolist (command '("/compact" "/clear" "/split" "/transfer" "/memory"
-                     "/model" "/reasoning" "/fast" "/sessions" "/compaction-mode"))
+  (dolist (command '("/?" "/help" "/compact" "/clear" "/split" "/transfer"
+                     "/memory" "/extract-memory" "/swarm" "/review" "/judge"
+                     "/model" "/reasoning" "/fast" "/transport" "/premium"
+                     "/z" "/zz" "/zzz" "/sessions" "/compaction-mode"))
     (should (assoc command jcode-slash-commands))))
 
 (ert-deftest jcode-slash-command-capf-completes-slash-commands ()
@@ -852,9 +854,44 @@
       (should capf)
       (pcase-let ((`(,start ,end ,candidates . ,_) capf))
         (should (= start (point-min)))
+ 	        (should (= end (point-max)))
+	        (should (member "/compact" candidates))
+	        (should (member "/compaction-mode" candidates))))))
+
+(ert-deftest jcode-slash-command-capf-completes-bare-slash ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (insert "/")
+    (let ((capf (jcode--slash-command-capf)))
+      (should capf)
+      (pcase-let ((`(,start ,end ,candidates . ,_) capf))
+        (should (= start (point-min)))
         (should (= end (point-max)))
-        (should (member "/compact" candidates))
-        (should (member "/compaction-mode" candidates))))))
+        (should (member "/?" candidates))
+        (should (member "/transport" candidates))))))
+
+(ert-deftest jcode-slash-command-capf-installs-in-live-input-buffers ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (setq-local completion-at-point-functions '(jcode--path-capf jcode--file-reference-capf))
+    (jcode--install-slash-command-capf-in-live-buffers)
+    (should (eq (car completion-at-point-functions) #'jcode--slash-command-capf))))
+
+(ert-deftest jcode-input-slash-command-recognizes-help-command ()
+  (should (equal (jcode--input-slash-command "/?") "/?")))
+
+(ert-deftest jcode-menu-knobs-send-native-protocol-requests ()
+  (let (sent)
+    (cl-letf (((symbol-function 'jcode-native-request-current)
+               (lambda (type &rest fields) (push (cons type fields) sent))))
+      (jcode-select-transport "websocket")
+      (jcode-select-premium-mode "zero")
+      (jcode-set-feature "memory" t)
+      (jcode-select-feature-state "swarm" "off")
+      (should (member '("set_transport" :transport "websocket") sent))
+      (should (member '("set_premium_mode" :mode 2) sent))
+      (should (member '("set_feature" :feature "memory" :enabled t) sent))
+      (should (member '("set_feature" :feature "swarm" :enabled nil) sent)))))
 
 (ert-deftest jcode-send-executes-known-slash-command-locally ()
   (let ((chat (generate-new-buffer " *jcode-test-slash-chat*"))
