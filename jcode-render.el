@@ -586,10 +586,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 (defun jcode--insert-tool-block (chat name status text &optional input intent raw-output)
   "Insert a native-TUI-like collapsible tool block into CHAT."
   (when (buffer-live-p chat)
-    (with-current-buffer chat
-      (let ((inhibit-read-only t)
-            (move (= (point) (point-max))))
-        (goto-char (point-max))
+    (jcode--append-to-buffer-preserving-scroll
+     chat
+     (lambda ()
 	(unless (bolp) (insert "\n"))
 	(insert "\n")
 	(let* ((start (point))
@@ -612,8 +611,7 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 	    (overlay-put overlay 'jcode-collapsed collapsed)
 	    ;; Background only, so markdown/code syntax foregrounds survive.
 	    (overlay-put overlay 'face 'jcode-tool-block-face)
-	    (jcode--render-tool-body overlay))
-	(when move (goto-char (point-max)))))))
+	    (jcode--render-tool-body overlay))))))
 
 (defun jcode-render-info (chat text)
   "Render informational TEXT in CHAT."

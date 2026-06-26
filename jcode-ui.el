@@ -484,15 +484,43 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
     (when (window-live-p input-window)
       (select-window input-window))))
 
+(defun jcode--window-at-buffer-end-p (window)
+  "Return non-nil if WINDOW is actively following the end of its buffer."
+  (>= (window-point window)
+      (with-current-buffer (window-buffer window) (point-max))))
+
+(defun jcode--append-to-buffer-preserving-scroll (buffer inserter)
+  "Run INSERTER at BUFFER end without disrupting readers above the bottom.
+Visible windows follow new output only when they were already showing the end of
+BUFFER before insertion.  Windows scrolled upward keep their position."
+  (when (buffer-live-p buffer)
+    (let ((windows (mapcar (lambda (window)
+                             (list window
+                                   (jcode--window-at-buffer-end-p window)
+                                   (window-point window)
+                                   (window-start window)))
+                           (get-buffer-window-list buffer nil t))))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t)
+              (buffer-read-only nil))
+          (save-excursion
+            (goto-char (point-max))
+            (funcall inserter))))
+      (dolist (state windows)
+        (pcase-let ((`(,window ,at-bottom ,old-point ,old-start) state))
+          (when (window-live-p window)
+            (if at-bottom
+                (set-window-point window
+                                  (with-current-buffer buffer (point-max)))
+              (set-window-start window old-start t)
+              (set-window-point window old-point))))))))
+
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t)
-            (move (= (point) (point-max))))
-        (goto-char (point-max))
-        (insert (if face (propertize text 'face face) text))
-        (when move (goto-char (point-max)))))))
+  (jcode--append-to-buffer-preserving-scroll
+   buffer
+   (lambda ()
+     (insert (if face (propertize text 'face face) text)))))
 
 (defun jcode--section (buffer title face)
   "Append a section TITLE to BUFFER using FACE."

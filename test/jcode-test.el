@@ -126,6 +126,40 @@
     (should (eq (key-binding (kbd "<tab>")) #'jcode-toggle-block))
     (should-not (eq (key-binding (kbd "TAB")) #'indent-for-tab-command))))
 
+(ert-deftest jcode-append-preserves-visible-scroll-when-reading-history ()
+  (let ((chat (generate-new-buffer " *jcode-test-scroll-chat*")))
+    (unwind-protect
+        (let ((window (selected-window)))
+          (set-window-buffer window chat)
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (let ((inhibit-read-only t))
+              (dotimes (i 80) (insert (format "line %d\n" i))))
+            (goto-char (point-min)))
+          (set-window-point window (with-current-buffer chat (point-min)))
+          (set-window-start window (with-current-buffer chat (point-min)) t)
+          (jcode--append chat "new output\n")
+          (should (= (window-point window)
+                     (with-current-buffer chat (point-min))))
+          (should-not (pos-visible-in-window-p
+                       (with-current-buffer chat (point-max)) window)))
+      (when (buffer-live-p chat) (kill-buffer chat)))))
+
+(ert-deftest jcode-append-follows-when-visible-window-at-bottom ()
+  (let ((chat (generate-new-buffer " *jcode-test-follow-chat*")))
+    (unwind-protect
+        (let ((window (selected-window)))
+          (set-window-buffer window chat)
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (let ((inhibit-read-only t))
+              (insert "line\n")))
+          (set-window-point window (with-current-buffer chat (point-max)))
+          (jcode--append chat "new output\n")
+          (should (= (window-point window)
+                     (with-current-buffer chat (point-max)))))
+      (when (buffer-live-p chat) (kill-buffer chat)))))
+
 (ert-deftest jcode-tool-block-collapses-and-expands-long-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-collapse-chat*"))
         (jcode-tool-preview-lines 2))
