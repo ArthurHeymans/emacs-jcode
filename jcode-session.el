@@ -35,6 +35,14 @@ messages, which are commonly created by opening jcode and doing nothing."
 
 (defvar-local jcode--session-list-directory nil)
 
+(defconst jcode--session-list-format
+  [ ("Title" 28 t)
+    ("Status" 10 t)
+    ("Model" 16 t)
+    ("Updated" 12 t)
+    ("Project" 24 t) ]
+  "Column format for `jcode-list-mode'.")
+
 (defun jcode--remote-prefix (&optional directory)
   "Return TRAMP prefix for DIRECTORY, or nil for local."
   (file-remote-p (or directory default-directory)))
@@ -198,6 +206,34 @@ message list.  Older/minimal metadata files without messages are kept visible."
                   (or (jcode-session-info-working-dir info) ""))
           id)))
 
+(defun jcode--relative-time-string (timestamp &optional now)
+  "Return a compact relative age string for ISO TIMESTAMP.
+NOW defaults to `current-time'.  Invalid or missing timestamps return an empty
+string."
+  (if (not (and (stringp timestamp) (not (string-empty-p timestamp))))
+      ""
+    (condition-case nil
+        (let* ((seconds (max 0 (float-time (time-subtract (or now (current-time))
+                                                          (date-to-time timestamp)))))
+               (minute 60)
+               (hour (* 60 minute))
+               (day (* 24 hour))
+               (week (* 7 day)))
+          (cond
+           ((< seconds 45) "just now")
+           ((< seconds hour) (format "%dm ago" (floor (/ seconds minute))))
+           ((< seconds day) (format "%dh ago" (floor (/ seconds hour))))
+           ((< seconds week) (format "%dd ago" (floor (/ seconds day))))
+           (t (format "%dw ago" (floor (/ seconds week))))))
+      (error ""))))
+
+(defun jcode--session-project-label (info)
+  "Return a compact project label for session INFO."
+  (let ((dir (jcode-session-info-working-dir info)))
+    (if (and (stringp dir) (not (string-empty-p dir)))
+        (file-name-nondirectory (directory-file-name dir))
+      "")))
+
 (defun jcode-read-session-id (&optional directory prompt)
   "Read a jcode session id for DIRECTORY with PROMPT."
   (let* ((sessions (jcode-list-sessions-data directory))
@@ -225,9 +261,9 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                   (jcode--session-status-string
                    (jcode-session-info-status info))
                   (or (jcode-session-info-model info) "")
-                  (or (jcode-session-info-updated-at info) "")
-                  (or (jcode-session-info-working-dir info) "")
-                  id))))
+                  (jcode--relative-time-string
+                   (jcode-session-info-updated-at info))
+                  (jcode--session-project-label info)))))
 
 (defun jcode--apply-session-info (info chat input)
   "Apply session INFO metadata to CHAT and INPUT buffers."
@@ -244,6 +280,9 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
 (defun jcode-list-refresh ()
   "Refresh the jcode session list buffer."
   (interactive)
+  (setq tabulated-list-format jcode--session-list-format)
+  (setq tabulated-list-sort-key nil)
+  (tabulated-list-init-header)
   (setq tabulated-list-entries
         (mapcar #'jcode--session-list-entry
                 (jcode-list-sessions-data jcode--session-list-directory)))
@@ -302,13 +341,8 @@ With prefix argument RESUME-ONLY, attach without replay."
 
 (define-derived-mode jcode-list-mode tabulated-list-mode "Jcode-Sessions"
   "Major mode for listing jcode sessions."
-  (setq tabulated-list-format
-        [ ("Title" 18 t)
-          ("Status" 10 t)
-          ("Model" 16 t)
-          ("Updated" 30 t)
-          ("Working directory" 36 t)
-          ("ID" 48 t) ])
+  (setq tabulated-list-format jcode--session-list-format)
+  (setq tabulated-list-sort-key nil)
   (setq tabulated-list-padding 2)
   (tabulated-list-init-header))
 

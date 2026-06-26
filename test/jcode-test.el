@@ -619,6 +619,36 @@
     (should (equal (aref (cadr (jcode--session-list-entry info)) 1)
                    "Crashed: Terminal or window closed (SIGHUP)"))))
 
+(ert-deftest jcode-session-list-entry-uses-relative-age-and-project ()
+  (let* ((now (date-to-time "2026-06-26T12:00:00Z"))
+         (info (jcode--make-session-info
+                :id "session_shrimp_1234567890"
+                :short-name "shrimp"
+                :status "Closed"
+                :model "sonnet"
+                :updated-at "2026-06-26T09:30:00Z"
+                :working-dir "/home/arthur/src/emacs-jcode")))
+    (cl-letf (((symbol-function 'current-time) (lambda () now)))
+      (let ((row (cadr (jcode--session-list-entry info))))
+        (should (= (length row) 5))
+        (should (equal (aref row 0) "shrimp"))
+        (should (equal (aref row 3) "2h ago"))
+        (should (equal (aref row 4) "emacs-jcode"))
+        (should-not (seq-some (lambda (cell)
+                                (and (stringp cell)
+                                     (string-match-p "session_shrimp" cell)))
+                              row))))))
+
+(ert-deftest jcode-relative-time-string-formats-common-ages ()
+  (let ((now (date-to-time "2026-06-26T12:00:00Z")))
+    (should (equal (jcode--relative-time-string "2026-06-26T11:59:40Z" now)
+                   "just now"))
+    (should (equal (jcode--relative-time-string "2026-06-26T11:20:00Z" now)
+                   "40m ago"))
+    (should (equal (jcode--relative-time-string "2026-06-25T09:00:00Z" now)
+                   "1d ago"))
+    (should (equal (jcode--relative-time-string nil now) ""))))
+
 (ert-deftest jcode-empty-session-detection-hides-system-only-sessions ()
   (let* ((root (make-temp-file "jcode-empty-sessions" t))
          (jcode-sessions-directory (file-name-as-directory root))
