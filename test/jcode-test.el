@@ -715,10 +715,40 @@
       (kill-buffer chat)
       (kill-buffer input))))
 
+(ert-deftest jcode-select-reasoning-effort-sends-selected-effort ()
+  (let* ((chat (generate-new-buffer " *jcode-test-select-reasoning-chat*"))
+         (input (generate-new-buffer " *jcode-test-select-reasoning-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "reasoning-test" :cwd default-directory))
+         requested)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-native-set-reasoning-effort)
+                   (lambda (_connection effort) (setq requested effort)))
+                  ((symbol-function 'message) #'ignore))
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--input-buffer input
+                  jcode--native-connection connection
+                  jcode--display-reasoning-effort "low"))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (jcode-select-reasoning-effort "high"))
+          (should (equal requested "high"))
+          (with-current-buffer input
+            (should (equal jcode--display-reasoning-effort "high"))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
+(ert-deftest jcode-header-reasoning-click-opens-selector ()
+  (should (eq (lookup-key jcode--header-reasoning-map [header-line mouse-1])
+              #'jcode-select-reasoning-effort)))
+
 (ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
   (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
                      jcode-connect jcode-reconnect jcode-attach
-                     jcode-send jcode-cancel jcode-disconnect))
+                     jcode-send jcode-cancel jcode-disconnect
+                     jcode-select-reasoning-effort))
     (should (commandp command)))
   (dolist (old '(emacs-jcode emacs-jcode-resume emacs-jcode-current
                  emacs-jcode-list emacs-jcode-plan emacs-jcode-send

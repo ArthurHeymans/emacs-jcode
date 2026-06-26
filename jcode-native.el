@@ -167,6 +167,23 @@ history."
       (jcode--set-display-metadata buffer :reasoning-effort next))
     (message "Jcode: Reasoning effort %s" next)))
 
+(defun jcode-select-reasoning-effort (&optional effort)
+  "Select native jcode reasoning EFFORT using completion."
+  (interactive)
+  (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
+         (connection (or (buffer-local-value 'jcode--native-connection chat)
+                         (user-error "No native jcode connection")))
+         (current (or (buffer-local-value 'jcode--display-reasoning-effort chat) "none"))
+         (choice (or effort
+                     (completing-read
+                      (format "Reasoning effort (current: %s): " current)
+                      jcode-native-reasoning-efforts nil t nil nil current))))
+    (unless (string-empty-p choice)
+      (jcode-native-set-reasoning-effort connection choice)
+      (dolist (buffer (list chat (jcode-native-connection-input connection)))
+        (jcode--set-display-metadata buffer :reasoning-effort choice))
+      (message "Jcode: Reasoning effort %s" choice))))
+
 (defun jcode-toggle-fast-mode ()
   "Toggle native jcode fast mode from the header."
   (interactive)

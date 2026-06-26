@@ -20,6 +20,7 @@
 (declare-function jcode-steer "jcode-input")
 (declare-function jcode-select-model "jcode-native")
 (declare-function jcode-cycle-reasoning-effort "jcode-native")
+(declare-function jcode-select-reasoning-effort "jcode-native")
 (declare-function jcode-toggle-fast-mode "jcode-native")
 (declare-function jcode-toggle-block "jcode-render")
 (declare-function jcode--file-reference-capf "jcode-input")
@@ -96,10 +97,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 
 (defvar jcode--header-reasoning-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [header-line mouse-1] #'jcode-cycle-reasoning-effort)
-    (define-key map [mode-line mouse-1] #'jcode-cycle-reasoning-effort)
+    (define-key map [header-line mouse-1] #'jcode-select-reasoning-effort)
+    (define-key map [mode-line mouse-1] #'jcode-select-reasoning-effort)
     map)
-  "Keymap for clicking the reasoning effort in the jcode header.")
+  "Keymap for selecting the reasoning effort from the jcode header.")
 
 (defvar jcode--header-fast-map
   (let ((map (make-sparse-keymap)))
@@ -262,10 +263,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                  'help-echo "mouse-1: Select model"
                  'local-map jcode--header-model-map)
      " • "
-	     (propertize reasoning
-			 'mouse-face 'highlight
-			 'help-echo "mouse-1: Cycle reasoning effort"
-			 'local-map jcode--header-reasoning-map)
+		     (propertize reasoning
+				 'mouse-face 'highlight
+				 'help-echo "mouse-1: Select reasoning effort"
+				 'local-map jcode--header-reasoning-map)
 	     " • "
 	     (propertize (jcode--header-fast-label)
 			 'mouse-face 'highlight
