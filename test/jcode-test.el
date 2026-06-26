@@ -456,6 +456,60 @@
       (kill-buffer chat)
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-command-does-not-create-session-until-send ()
+  (let (started displayed)
+    (cl-letf (((symbol-function 'jcode--project-directory)
+               (lambda () default-directory))
+              ((symbol-function 'jcode--display-buffers)
+               (lambda (chat input) (setq displayed (cons chat input))))
+              ((symbol-function 'jcode-session-start)
+               (lambda (&rest _args) (setq started t))))
+      (let ((chat (jcode)))
+        (unwind-protect
+            (progn
+              (should (buffer-live-p chat))
+              (should displayed)
+              (should-not started)
+              (should-not (buffer-local-value 'jcode--session chat)))
+          (kill-buffer chat)
+          (when (buffer-live-p (cdr displayed))
+            (kill-buffer (cdr displayed))))))))
+
+(ert-deftest jcode-send-starts-lazy-session-and-prompts-after-start ()
+  (let* ((chat (generate-new-buffer " *jcode-test-lazy-chat*"))
+         (input (generate-new-buffer " *jcode-test-lazy-input*"))
+         started prompted)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (insert "hello lazy")
+            (cl-letf (((symbol-function 'jcode-session-start)
+                       (lambda (cwd start-chat start-input session-id resume-only callback)
+                         (setq started (list cwd start-chat start-input session-id resume-only))
+                         (let ((session (jcode--make-session
+                                         :id "lazy-id"
+                                         :cwd cwd
+                                         :chat-buffer start-chat
+                                         :input-buffer start-input)))
+                           (with-current-buffer start-chat (setq jcode--session session))
+                           (with-current-buffer start-input (setq jcode--session session))
+                           (funcall callback session)
+                           session)))
+                      ((symbol-function 'jcode-session-prompt)
+                       (lambda (session text) (setq prompted (list session text)))))
+              (jcode-send)
+              (should started)
+              (should (equal (nth 1 started) chat))
+              (should (equal (nth 2 started) input))
+              (should (null (nth 3 started)))
+              (should (equal (cadr prompted) "hello lazy"))
+              (should (string-empty-p (buffer-string))))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest jcode-current-buffer-pair-detects-chat-and-input ()
   (let* ((dir default-directory)
          (buffers (jcode--make-buffers dir "pair-test"))
@@ -654,7 +708,8 @@
          (jcode-sessions-directory (file-name-as-directory root))
          (system-file (expand-file-name "empty.json" root))
          (real-file (expand-file-name "real.json" root))
-         (saved-file (expand-file-name "saved.json" root)))
+         (saved-file (expand-file-name "saved.json" root))
+         (zero-file (expand-file-name "zero.json" root)))
     (unwind-protect
         (progn
           (write-region
@@ -666,12 +721,17 @@
           (write-region
            "{\"id\":\"saved\",\"saved\":true,\"status\":\"Closed\",\"updated_at\":\"2026\",\"messages\":[{\"role\":\"user\",\"display_role\":\"system\",\"content\":[]}]}"
            nil saved-file)
+          (write-region
+           "{\"id\":\"zero\",\"status\":\"Active\",\"updated_at\":\"2026\",\"messages\":[]}"
+           nil zero-file)
           (let ((ids (mapcar #'jcode-session-info-id (jcode-list-sessions-data root))))
             (should-not (member "empty" ids))
+            (should-not (member "zero" ids))
             (should (member "real" ids))
             (should (member "saved" ids)))
           (let ((jcode-hide-empty-sessions nil))
             (should (jcode--session-empty-p (jcode--read-session-info system-file)))
+            (should (jcode--session-empty-p (jcode--read-session-info zero-file)))
             (should-not (jcode--session-empty-p (jcode--read-session-info real-file)))
             (should-not (jcode--session-empty-p (jcode--read-session-info saved-file)))))
       (delete-directory root t))))

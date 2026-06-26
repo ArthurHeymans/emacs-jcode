@@ -189,11 +189,11 @@
      (setf (jcode-session-initialized session) t)
      (funcall callback session))))
 
-(defun jcode-session-new (session)
+(defun jcode-session-new (session &optional callback)
   "Create a daemon jcode session for SESSION."
   (jcode--request
    session "session/new" `(:cwd ,(jcode-session-cwd session))
-   (lambda (result)
+    (lambda (result)
      (when-let ((id (or (alist-get 'sessionId result) (alist-get 'id result))))
        (setf (jcode-session-id session) id)
        (jcode--session-set-display session :session-id id :status "Active"))
@@ -201,9 +201,11 @@
                               (format "Connected to jcode%s"
                                       (if (jcode-session-id session)
                                           (format " session %s" (jcode-session-id session))
-                                        ""))))))
+                                        "")))
+     (setf (jcode-session-busy session) nil)
+     (when callback (funcall callback session)))))
 
-(defun jcode-session-load (session id &optional resume-only)
+(defun jcode-session-load (session id &optional resume-only callback)
   "Load or resume jcode session ID into SESSION.  RESUME-ONLY uses session/resume."
   (setf (jcode-session-id session) id)
   (setf (jcode-session-busy session) t)
@@ -215,7 +217,8 @@
                           (jcode--session-set-display session :session-id id :status "Active")
                           (jcode-render-info
                            (jcode-session-chat-buffer session)
-                           (format "%s session %s" (if resume-only "Resumed" "Loaded") id)))))
+                           (format "%s session %s" (if resume-only "Resumed" "Loaded") id))
+                          (when callback (funcall callback session)))))
 
 (defun jcode-session-prompt (session text)
   "Send TEXT as prompt for SESSION."
@@ -254,10 +257,13 @@
         (delete-process proc)))
     (setq jcode--sessions (delq session jcode--sessions))))
 
-(defun jcode-session-start (cwd chat input &optional session-id resume-only)
+(defun jcode-session-start (cwd chat input &optional session-id resume-only callback)
   "Start ACP client for CWD and buffers CHAT/INPUT.
-When SESSION-ID is non-nil, load or resume it depending on RESUME-ONLY."
+When SESSION-ID is non-nil, load or resume it depending on RESUME-ONLY.
+Call CALLBACK with the started session after session/new, session/load, or
+session/resume completes."
   (let ((session (jcode--make-session :cwd cwd :chat-buffer chat :input-buffer input)))
+    (setf (jcode-session-busy session) t)
     (with-current-buffer chat (setq jcode--session session))
     (with-current-buffer input (setq jcode--session session))
     (push session jcode--sessions)
@@ -266,8 +272,8 @@ When SESSION-ID is non-nil, load or resume it depending on RESUME-ONLY."
      session
      (lambda (s)
        (if session-id
-           (jcode-session-load s session-id resume-only)
-         (jcode-session-new s))))
+           (jcode-session-load s session-id resume-only callback)
+         (jcode-session-new s callback))))
     session))
 
 (provide 'jcode-acp)

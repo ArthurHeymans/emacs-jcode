@@ -160,8 +160,10 @@ session takeover so this client receives live streaming updates."
 
 ;;;###autoload
 (defun jcode (&optional session-id)
-  "Open or create a jcode session for the current project.
-With prefix argument, prompt for SESSION-ID and load that session."
+  "Open jcode buffers for the current project.
+Without SESSION-ID, defer creating a persisted jcode session until the first
+prompt is sent.  With prefix argument, prompt for SESSION-ID and load that
+session immediately."
   (interactive
    (list (when current-prefix-arg
            (jcode-read-session-id (jcode--project-directory) "Load jcode session: "))))
@@ -175,7 +177,7 @@ With prefix argument, prompt for SESSION-ID and load that session."
       (when session-id
         (jcode-apply-session-info-to-buffers session-id chat input))
       (jcode--display-buffers chat input)
-      (unless (buffer-local-value 'jcode--session chat)
+      (when (and session-id (not (buffer-local-value 'jcode--session chat)))
         (jcode-session-start dir chat input session-id nil))
       chat)))
 
