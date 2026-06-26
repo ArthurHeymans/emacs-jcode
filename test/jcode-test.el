@@ -825,6 +825,27 @@
       (when (buffer-live-p input) (kill-buffer input))
       (delete-directory root t))))
 
+(ert-deftest jcode-user-turn-count-counts-only-user-text-sends ()
+  (let* ((root (make-temp-file "jcode-user-turn-count" t))
+         (jcode-sessions-directory (file-name-as-directory root))
+         (file (expand-file-name "turns.json" root)))
+    (unwind-protect
+        (progn
+          (write-region
+           (concat
+            "{\"id\":\"turns\",\"status\":\"Closed\",\"messages\":["
+            "{\"role\":\"user\",\"display_role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"system reminder\"}]},"
+            "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"first prompt\"}]},"
+            "{\"role\":\"assistant\",\"content\":\"ok\"},"
+            "{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_call_id\":\"t1\",\"content\":\"out\"}]},"
+            "{\"role\":\"user\",\"display_role\":\"background_task\",\"content\":[{\"type\":\"text\",\"text\":\"background completed\"}]},"
+            "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"second prompt\"}]}"
+            "]}")
+           nil file)
+          (let ((info (jcode--read-session-info file)))
+            (should (equal (jcode-session-info-user-turn-count info) 2))))
+      (delete-directory root t))))
+
 (ert-deftest jcode-prune-empty-sessions-deletes-only-closed-empty-files ()
   (let* ((root (make-temp-file "jcode-prune-sessions" t))
          (jcode-sessions-directory (file-name-as-directory root))

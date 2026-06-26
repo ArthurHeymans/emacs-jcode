@@ -99,9 +99,23 @@ messages, which are commonly created by opening jcode and doing nothing."
              (equal role "system")))))
 
 (defun jcode--user-turn-message-p (message)
-  "Return non-nil if persisted MESSAGE is a real user-sent prompt."
+  "Return non-nil if persisted MESSAGE is a user-authored text prompt.
+jcode stores tool results as `role=user' messages for provider protocol
+compatibility; those are not user sends and must not affect the Turns column."
   (and (jcode--conversation-message-p message)
-       (equal (jcode--safe-alist-get 'role message) "user")))
+       (not (member (jcode--message-display-role message)
+                    '("background_task" "system")))
+       (equal (jcode--safe-alist-get 'role message) "user")
+       (let ((content (jcode--safe-alist-get 'content message)))
+         (or (and (stringp content) (not (string-empty-p (string-trim content))))
+             (and (listp content)
+                  (cl-some (lambda (part)
+                             (and (listp part)
+                                  (equal (jcode--safe-alist-get 'type part) "text")
+                                  (let ((text (jcode--safe-alist-get 'text part)))
+                                    (and (stringp text)
+                                         (not (string-empty-p (string-trim text)))))))
+                           content))))))
 
 (defun jcode--session-empty-p (info)
   "Return non-nil if INFO has no real conversation messages.
