@@ -100,6 +100,25 @@
             (should (string-match-p "collapse tool output" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-tool-block-tab-binding-toggles-from-row-and-button ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-tab-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "done")
+                                    (text . "one\ntwo")))
+          (with-current-buffer chat
+            (goto-char (point-min))
+            (search-forward "bash")
+            (call-interactively (key-binding (kbd "TAB")))
+            (should (string-match-p "one" (buffer-string)))
+            (search-forward "collapse tool output")
+            (call-interactively (key-binding (kbd "TAB")))
+            (should-not (string-match-p "one" (buffer-string)))
+            (should (string-match-p "expand output" (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-tool-row-summarizes-input-without-showing-it-as-output ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-summary-chat*")))
     (unwind-protect
@@ -114,6 +133,10 @@
             (should-not (string-match-p "output hidden" (buffer-string)))
             (should-not (string-match-p "((command" (buffer-string)))))
       (kill-buffer chat))))
+
+(ert-deftest jcode-tool-output-text-extracts-output-key ()
+  (should (equal (jcode--tool-output-text '((output . "one\ntwo")))
+                 "one\ntwo")))
 
 (ert-deftest jcode-tool-row-uses-tui-display-name-and-running-color ()
   (let ((chat (generate-new-buffer " *jcode-test-tool-running-chat*")))

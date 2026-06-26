@@ -8,6 +8,7 @@
 (require 'subr-x)
 (require 'button)
 (require 'seq)
+(require 'cl-lib)
 
 (declare-function jcode-session-chat-buffer "jcode-acp")
 
@@ -22,6 +23,9 @@ The native jcode TUI defaults to compact tool rows rather than showing output;
 the default of 0 matches that behavior.  Expanding the block shows full output."
   :type 'natnum
   :group 'jcode)
+
+(defvar-local jcode--tool-block-counter 0
+  "Monotonic counter for jcode tool block ids in the current chat buffer.")
 
 (defun jcode--sanitize-text (text)
   "Strip terminal control sequences and undesirable control chars from TEXT."
@@ -48,6 +52,7 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
 (defun jcode--content-text (content)
   "Extract textual content from ACP CONTENT value."
   (cond
+   ((null content) nil)
    ((stringp content) (jcode--sanitize-text content))
    ((vectorp content)
     (mapconcat (lambda (item)
@@ -95,9 +100,7 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
          (status (or (jcode--alist-get-any '(status state) params) (if update "update" "start")))
          (input (jcode--tool-input params))
          (intent (jcode--alist-get-any '(intent description) params))
-         (text (or (jcode--event-text params)
-                   (when-let ((raw (jcode--alist-get-any '(output rawOutput result) params)))
-                     (if (stringp raw) raw (format "%S" raw))))))
+         (text (jcode--tool-output-text params)))
     (jcode--insert-tool-block chat name status (jcode--sanitize-text text) input intent)))
 
 (defun jcode--tool-input (params)
@@ -108,10 +111,35 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
      ((and (vectorp value) (> (length value) 0)) value)
      (t nil))))
 
+(defun jcode--tool-output-text (params)
+  "Extract textual tool output from PARAMS."
+  (or (jcode--event-text params)
+      (let ((raw (or (alist-get 'output params)
+                     (alist-get 'rawOutput params)
+                     (alist-get 'result params))))
+        (cond
+         ((stringp raw) raw)
+         (raw (format "%S" raw))))))
+
 (defun jcode--tool-block-overlay-at-point ()
   "Return the jcode tool block overlay at point, if any."
-  (seq-find (lambda (overlay) (overlay-get overlay 'jcode-tool-block))
-            (overlays-at (point))))
+  (or (when-let* ((button (button-at (point)))
+                  (id (button-get button 'jcode-tool-block-id)))
+        (jcode--tool-block-overlay-by-id id))
+      (seq-find (lambda (overlay) (overlay-get overlay 'jcode-tool-block))
+                (overlays-at (point)))
+      ;; `overlays-at' uses half-open intervals.  If point is at the end of the
+      ;; row/button line, look one character back so TAB still works naturally.
+      (and (> (point) (point-min))
+           (seq-find (lambda (overlay) (overlay-get overlay 'jcode-tool-block))
+                     (overlays-at (1- (point)))))))
+
+(defun jcode--tool-block-overlay-by-id (id)
+  "Return live jcode tool block overlay with ID in current buffer."
+  (seq-find (lambda (overlay)
+              (and (overlay-get overlay 'jcode-tool-block)
+                   (equal (overlay-get overlay 'jcode-tool-block-id) id)))
+            (overlays-in (point-min) (point-max))))
 
 (defun jcode--markdown-fence-delimiter (text)
   "Return a markdown fence delimiter safe for TEXT."
@@ -260,14 +288,17 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 
 (defun jcode--insert-tool-toggle-button (label overlay)
   "Insert a clickable LABEL linked to tool block OVERLAY."
+  (let ((id (overlay-get overlay 'jcode-tool-block-id)))
   (insert-text-button label
                       'face 'jcode-collapsed-face
                       'follow-link t
                       'help-echo "mouse-1 or TAB: toggle tool output"
-                      'jcode-tool-block overlay
+                      'keymap nil
+                      'jcode-tool-block-id id
                       'action (lambda (button)
-                                (when-let ((ov (button-get button 'jcode-tool-block)))
-                                  (jcode--toggle-tool-overlay ov)))))
+                                (when-let* ((id (button-get button 'jcode-tool-block-id))
+                                            (ov (jcode--tool-block-overlay-by-id id)))
+                                  (jcode--toggle-tool-overlay ov))))))
 
 (defun jcode--render-tool-body (overlay)
   "Rewrite OVERLAY body according to its collapsed state."
@@ -333,8 +364,10 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
           (let* ((header-end (point-marker))
                  (_preview (jcode--tool-preview text jcode-tool-show-preview-lines))
                  (collapsed (and (jcode--tool-lines text) t))
-                 (overlay (make-overlay start (point) nil nil nil)))
+                 (overlay (make-overlay start (point) nil nil nil))
+                 (id (cl-incf jcode--tool-block-counter)))
             (overlay-put overlay 'jcode-tool-block t)
+            (overlay-put overlay 'jcode-tool-block-id id)
             (overlay-put overlay 'jcode-header-end header-end)
             (overlay-put overlay 'jcode-full-text (or text ""))
             (overlay-put overlay 'jcode-collapsed collapsed)
