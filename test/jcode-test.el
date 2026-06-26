@@ -1463,11 +1463,13 @@
                 :working-dir "/home/arthur/src/emacs-jcode")))
     (cl-letf (((symbol-function 'current-time) (lambda () now)))
       (let ((row (cadr (jcode--session-list-entry info))))
-        (should (= (length row) 6))
+        (should (= (length row) 8))
         (should (equal (aref row 0) "shrimp"))
-        (should (equal (aref row 3) "7"))
-        (should (equal (aref row 4) "2h ago"))
-        (should (equal (aref row 5) "emacs-jcode"))
+        (should (equal (aref row 2) ""))
+        (should (equal (aref row 3) ""))
+        (should (equal (aref row 5) "7"))
+        (should (equal (aref row 6) "2h ago"))
+        (should (equal (aref row 7) "emacs-jcode"))
         (should-not (seq-some (lambda (cell)
                                 (and (stringp cell)
                                      (string-match-p "session_shrimp" cell)))
@@ -1704,6 +1706,25 @@
             (should-not (file-exists-p three))))
       (kill-buffer buf)
       (delete-directory root t))))
+
+(ert-deftest jcode-session-list-entry-shows-location-and-live-client ()
+  (let* ((chat (generate-new-buffer " *jcode-test-list-client-chat*"))
+         (info (jcode--make-session-info
+                :id "s-list" :short-name "list-test" :status "Active"
+                :model "gpt-test" :updated-at "2026-06-26T14:00:00Z"
+                :working-dir "/tmp/project")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (setq jcode--display-session-id "s-list")
+            (jcode--set-display-metadata
+             chat :owner 'owned :client-count 2 :connection-type "native"))
+          (jcode--annotate-session-runtime (list info) "/ssh:example:/tmp/project/")
+          (let ((columns (cadr (jcode--session-list-entry info))))
+            (should (equal (aref columns 2) "remote ssh:example"))
+            (should (equal (aref columns 3) "Emacs owned x2 native"))))
+      (kill-buffer chat))))
 
 (ert-deftest jcode-native-json-read-parses-history ()
   (let ((event (jcode-native--json-read

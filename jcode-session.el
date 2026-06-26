@@ -31,13 +31,16 @@ messages, which are commonly created by opening jcode and doing nothing."
 
 (cl-defstruct (jcode-session-info (:constructor jcode--make-session-info))
   id title short-name working-dir status model provider updated-at created-at file
-  last-pid server-name message-count conversation-count user-turn-count saved)
+  last-pid server-name message-count conversation-count user-turn-count saved
+  location client)
 
 (defvar-local jcode--session-list-directory nil)
 
 (defconst jcode--session-list-format
   [ ("Title" 28 t)
     ("Status" 10 t)
+    ("Where" 14 t)
+    ("Client" 16 t)
     ("Model" 16 t)
     ("Turns" 7 t)
     ("Updated" 12 t)
@@ -225,18 +228,56 @@ because they can correspond to currently open Emacs/TUI windows."
       (setf (jcode-session-info-user-turn-count info) count)))
   sessions)
 
+(defun jcode--session-location-label (directory)
+  "Return a compact local/TRAMP location label for DIRECTORY."
+  (if-let ((remote (jcode--remote-prefix directory)))
+      (format "remote %s" (string-remove-suffix ":" (string-remove-prefix "/" remote)))
+    "local"))
+
+(defun jcode--session-live-client-label (session-id)
+  "Return connected client label for live SESSION-ID buffers, or nil."
+  (catch 'label
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (and (boundp 'jcode--display-session-id)
+                   (equal jcode--display-session-id session-id)
+                   (derived-mode-p 'jcode-chat-mode))
+          (let* ((owner (pcase jcode--display-owner
+                          ('owned "owned")
+                          ('viewing "viewing")
+                          ((and (pred stringp) s) s)
+                          (_ nil)))
+                 (count (and (numberp jcode--display-client-count)
+                             (format "x%d" jcode--display-client-count)))
+                 (transport (and (stringp jcode--display-connection-type)
+                                 (not (string-empty-p jcode--display-connection-type))
+                                 jcode--display-connection-type)))
+            (throw 'label
+                   (string-join (delq nil (list "Emacs" owner count transport)) " "))))))))
+
+(defun jcode--annotate-session-runtime (sessions directory)
+  "Annotate SESSIONS with runtime location and live client metadata."
+  (let ((location (jcode--session-location-label directory)))
+    (dolist (info sessions)
+      (setf (jcode-session-info-location info) location)
+      (when-let ((client (jcode--session-live-client-label (jcode-session-info-id info))))
+        (setf (jcode-session-info-client info) client)))
+    sessions))
+
 (defun jcode-list-sessions-data (&optional directory)
   "Return discovered jcode session metadata for DIRECTORY's host."
   (let ((dir (jcode--sessions-directory directory)))
     (when (file-directory-p dir)
-      (sort (jcode--annotate-session-live-counts
-             (jcode--annotate-session-server-names
-              (cl-remove-if (lambda (info)
+      (sort (jcode--annotate-session-runtime
+             (jcode--annotate-session-live-counts
+              (jcode--annotate-session-server-names
+               (cl-remove-if (lambda (info)
                               (and jcode-hide-empty-sessions
                                    (jcode--session-hidden-as-empty-p info)))
                             (delq nil (mapcar #'jcode--read-session-info
                                               (directory-files dir t "\\.json\\'" t))))
-              directory))
+               directory))
+             directory)
             (lambda (a b)
               (string> (or (jcode-session-info-updated-at a) "")
                        (or (jcode-session-info-updated-at b) "")))))))
@@ -324,6 +365,8 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
           (vector (jcode--session-display-title info)
                   (jcode--session-status-string
                    (jcode-session-info-status info))
+                  (or (jcode-session-info-location info) "")
+                  (or (jcode-session-info-client info) "")
                   (or (jcode-session-info-model info) "")
                   (jcode--session-turn-count-string info)
                   (jcode--relative-time-string
