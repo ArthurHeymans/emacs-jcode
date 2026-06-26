@@ -21,7 +21,7 @@
 (declare-function jcode-select-model "jcode-native")
 (declare-function jcode-cycle-reasoning-effort "jcode-native")
 (declare-function jcode-select-reasoning-effort "jcode-native")
-(declare-function jcode-toggle-fast-mode "jcode-native")
+(declare-function jcode-select-fast-mode "jcode-native")
 (declare-function jcode-toggle-block "jcode-render")
 (declare-function jcode--file-reference-capf "jcode-input")
 (declare-function jcode--path-capf "jcode-input")
@@ -104,10 +104,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 
 (defvar jcode--header-fast-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [header-line mouse-1] #'jcode-toggle-fast-mode)
-    (define-key map [mode-line mouse-1] #'jcode-toggle-fast-mode)
+    (define-key map [header-line mouse-1] #'jcode-select-fast-mode)
+    (define-key map [mode-line mouse-1] #'jcode-select-fast-mode)
     map)
-  "Keymap for clicking fast mode in the jcode header.")
+  "Keymap for selecting fast mode in the jcode header.")
 
 (defun jcode--normalize-directory (dir)
   "Normalize DIR for project/session comparisons."
@@ -268,10 +268,10 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 				 'help-echo "mouse-1: Select reasoning effort"
 				 'local-map jcode--header-reasoning-map)
 	     " • "
-	     (propertize (jcode--header-fast-label)
-			 'mouse-face 'highlight
-			 'help-echo "mouse-1: Toggle fast mode"
-			 'local-map jcode--header-fast-map)
+		     (propertize (jcode--header-fast-label)
+				 'mouse-face 'highlight
+				 'help-echo "mouse-1: Select fast mode"
+				 'local-map jcode--header-fast-map)
 	     " "
      (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
      (propertize (jcode--header-owner) 'face 'jcode-dim-face)

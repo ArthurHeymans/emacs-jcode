@@ -287,8 +287,16 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 (defun jcode--tool-input-value (input key)
   "Return KEY from structured tool INPUT."
   (when (listp input)
-    (or (alist-get key input)
-        (alist-get (intern (substring (symbol-name key) 1)) input))))
+    (let* ((name (symbol-name key))
+           (plain (if (string-prefix-p ":" name)
+                      (intern (substring name 1))
+                    key))
+           (keyword (if (string-prefix-p ":" name)
+                        key
+                      (intern (concat ":" name)))))
+      (or (alist-get key input)
+          (alist-get plain input)
+          (alist-get keyword input)))))
 
 (defun jcode--tool-input-string (input key)
   "Return string KEY from structured tool INPUT."
@@ -392,7 +400,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
                              (jcode--tool-input-string input 'query))))
          (format "'%s'" (jcode--truncate-end query 70))))
       ("batch"
-       (format "%d calls" (or (jcode--tool-input-count input 'tool_calls) 0)))
+       (when-let ((count (jcode--tool-input-count input 'tool_calls)))
+         (when (> count 0)
+           (format "%d call%s" count (if (= count 1) "" "s")))))
       ("browser"
        (let ((action (jcode--tool-input-action input "browser")))
          (pcase action
@@ -588,10 +598,9 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
   (when (buffer-live-p chat)
     (jcode--append-to-buffer-preserving-scroll
      chat
-     (lambda ()
-	(unless (bolp) (insert "\n"))
-	(insert "\n")
-	(let* ((start (point))
+	     (lambda ()
+		(unless (bolp) (insert "\n"))
+		(let* ((start (point))
 	       (icon-face (jcode--tool-status-icon-face status text))
 	       (badge (jcode--tool-output-token-badge (or raw-output text)))
 	       (display-name (jcode--tool-display-name name))

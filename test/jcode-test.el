@@ -305,6 +305,27 @@
                                   (title . "Implementation notes")) nil)
                  "write Implementation notes")))
 
+(ert-deftest jcode-tool-input-summary-counts-batch-calls ()
+  (should (equal (jcode--tool-input-summary
+                  "batch" '((tool_calls . [((tool . "read")) ((tool . "grep"))])) nil)
+                 "2 calls"))
+  (should-not (jcode--tool-input-summary "batch" '((tool_calls . [])) nil)))
+
+(ert-deftest jcode-tool-rows-are-compact-without-blank-lines ()
+  (let ((chat (generate-new-buffer " *jcode-test-compact-tools-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "start")
+                                    (input . ((command . "echo one")))))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "done")
+                                    (input . ((command . "echo two")))))
+          (with-current-buffer chat
+            (should-not (string-match-p "\n\n  [◌✓]" (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-header-renders-only-on-input-with-clear-usage ()
   (let ((chat (generate-new-buffer " *jcode-test-header-chat*"))
         (input (generate-new-buffer " *jcode-test-header-input*")))
@@ -350,7 +371,7 @@
     (should-error (jcode-native--send connection '(:type "set_model"))
                   :type 'user-error)))
 
-(ert-deftest jcode-fast-mode-header-click-sends-service-tier-toggle ()
+(ert-deftest jcode-select-fast-mode-sends-selected-service-tier ()
   (let ((chat (generate-new-buffer " *jcode-test-fast-chat*"))
         (input (generate-new-buffer " *jcode-test-fast-input*"))
         sent)
@@ -366,12 +387,12 @@
                        (lambda (_connection type &rest fields)
                          (setq sent (cons type fields))
                          7))
-                      ((symbol-function 'message) #'ignore))
-              (with-current-buffer input
-                (jcode-toggle-fast-mode)))
-            (should (equal sent '("set_service_tier" :service_tier "priority")))
-            (with-current-buffer input
-              (should (equal jcode--display-service-tier "priority")))))
+	                      ((symbol-function 'message) #'ignore))
+	              (with-current-buffer input
+	                (jcode-select-fast-mode "priority")))
+	            (should (equal sent '("set_service_tier" :service_tier "priority")))
+	            (with-current-buffer input
+	              (should (equal jcode--display-service-tier "priority")))))
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
 
@@ -389,8 +410,12 @@
             (with-current-buffer input
               (should (equal jcode--display-service-tier "priority"))
               (should (string-match-p "fast on" (jcode--header-line))))))
-      (when (buffer-live-p chat) (kill-buffer chat))
-      (when (buffer-live-p input) (kill-buffer input)))))
+	      (when (buffer-live-p chat) (kill-buffer chat))
+	      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-header-fast-click-opens-selector ()
+  (should (eq (lookup-key jcode--header-fast-map [header-line mouse-1])
+              #'jcode-select-fast-mode)))
 
 (ert-deftest jcode-header-hides-context-when-max-unknown ()
   (with-temp-buffer
@@ -746,9 +771,9 @@
 
 (ert-deftest jcode-short-commands-replace-emacs-prefixed-functions ()
   (dolist (command '(jcode jcode-resume jcode-current jcode-list jcode-plan
-                     jcode-connect jcode-reconnect jcode-attach
-                     jcode-send jcode-cancel jcode-disconnect
-                     jcode-select-reasoning-effort))
+	                     jcode-connect jcode-reconnect jcode-attach
+	                     jcode-send jcode-cancel jcode-disconnect
+	                     jcode-select-reasoning-effort jcode-select-fast-mode))
     (should (commandp command)))
   (dolist (old '(emacs-jcode emacs-jcode-resume emacs-jcode-current
                  emacs-jcode-list emacs-jcode-plan emacs-jcode-send

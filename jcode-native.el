@@ -184,19 +184,26 @@ history."
         (jcode--set-display-metadata buffer :reasoning-effort choice))
       (message "Jcode: Reasoning effort %s" choice))))
 
-(defun jcode-toggle-fast-mode ()
-  "Toggle native jcode fast mode from the header."
+(defvar jcode-native-service-tiers '("off" "priority")
+  "Native jcode service tiers exposed in the Emacs selector.")
+
+(defun jcode-select-fast-mode (&optional service-tier)
+  "Select native jcode fast/service SERVICE-TIER using completion."
   (interactive)
   (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
          (connection (or (buffer-local-value 'jcode--native-connection chat)
                          (user-error "No native jcode connection")))
          (current (buffer-local-value 'jcode--display-service-tier chat))
-         (enabled (member (format "%s" current) '("priority" "fast")))
-         (next (if enabled "off" "priority")))
-    (jcode-native-set-service-tier connection next)
-    (dolist (buffer (list chat (jcode-native-connection-input connection)))
-      (jcode--set-display-metadata buffer :service-tier next))
-    (message "Jcode: fast mode %s" (if enabled "off" "on"))))
+         (current-label (or (and current (format "%s" current)) "off"))
+         (choice (or service-tier
+                     (completing-read
+                      (format "Fast/service tier (current: %s): " current-label)
+                      jcode-native-service-tiers nil t nil nil current-label))))
+    (unless (string-empty-p choice)
+      (jcode-native-set-service-tier connection choice)
+      (dolist (buffer (list chat (jcode-native-connection-input connection)))
+        (jcode--set-display-metadata buffer :service-tier choice))
+      (message "Jcode: fast mode %s" (if (member choice '("priority" "fast")) "on" "off")))))
 
 (defun jcode-native--drain-followup (connection)
   "Send next queued follow-up for CONNECTION, if any."
