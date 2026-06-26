@@ -1,7 +1,7 @@
 ;;; jcode.el --- Emacs frontend for jcode -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-;; Package-Requires: ((emacs "29.1") (md-ts-mode "0.3.0"))
+;; Package-Requires: ((emacs "29.1") (transient "0.9.0") (md-ts-mode "0.3.0"))
 ;; Version: 0.1.0
 ;; Keywords: ai llm tools
 
@@ -25,6 +25,7 @@
 (require 'jcode-native)
 (require 'jcode-acp)
 (require 'jcode-input)
+(require 'jcode-menu)
 
 (declare-function jcode-apply-session-info-to-buffers "jcode-session"
                   (session-id chat input))

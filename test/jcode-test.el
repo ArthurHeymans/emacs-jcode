@@ -836,6 +836,42 @@
 (ert-deftest jcode-list-refresh-is-command ()
   (should (commandp #'jcode-list-refresh)))
 
+(ert-deftest jcode-menu-and-slash-commands-are-wired ()
+  (should (commandp #'jcode-menu))
+  (should (eq (lookup-key jcode-input-mode-map (kbd "C-c C-p")) #'jcode-menu))
+  (should (eq (lookup-key jcode-chat-mode-map (kbd "C-c C-p")) #'jcode-menu))
+  (dolist (command '("/compact" "/clear" "/split" "/transfer" "/memory"
+                     "/model" "/reasoning" "/fast" "/sessions" "/compaction-mode"))
+    (should (assoc command jcode-slash-commands))))
+
+(ert-deftest jcode-slash-command-capf-completes-slash-commands ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (insert "/co")
+    (let ((capf (jcode--slash-command-capf)))
+      (should capf)
+      (pcase-let ((`(,start ,end ,candidates . ,_) capf))
+        (should (= start (point-min)))
+        (should (= end (point-max)))
+        (should (member "/compact" candidates))
+        (should (member "/compaction-mode" candidates))))))
+
+(ert-deftest jcode-send-executes-known-slash-command-locally ()
+  (let ((chat (generate-new-buffer " *jcode-test-slash-chat*"))
+        executed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode-execute-slash-command)
+                   (lambda (command) (setq executed command))))
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-temp-buffer
+            (jcode-input-mode)
+            (setq jcode--chat-buffer chat)
+            (insert "/compact")
+            (jcode-send)
+            (should (equal executed "/compact"))
+            (should (string-empty-p (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-list-mode-has-standard-mark-keybindings ()
   (with-temp-buffer
     (jcode-list-mode)

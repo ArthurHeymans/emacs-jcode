@@ -22,10 +22,12 @@
 (declare-function jcode-cycle-reasoning-effort "jcode-native")
 (declare-function jcode-select-reasoning-effort "jcode-native")
 (declare-function jcode-select-fast-mode "jcode-native")
+(declare-function jcode-menu "jcode-menu")
 (declare-function jcode-toggle-block "jcode-render")
 (declare-function jcode--file-reference-capf "jcode-input")
 (declare-function jcode--path-capf "jcode-input")
 (declare-function jcode--maybe-complete-at "jcode-input")
+(declare-function jcode--slash-command-capf "jcode-menu")
 
 (defgroup jcode nil
   "Emacs frontend for jcode."
@@ -331,6 +333,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
     (define-key map (kbd "q") #'quit-window)
     (define-key map (kbd "C-c C-k") #'jcode-cancel)
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
+    (define-key map (kbd "C-c C-p") #'jcode-menu)
     (define-key map (kbd "TAB") #'jcode-toggle-block)
     (define-key map (kbd "<tab>") #'jcode-toggle-block)
     map)
@@ -379,6 +382,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
 (define-key jcode-chat-mode-map (kbd "q") #'quit-window)
 (define-key jcode-chat-mode-map (kbd "C-c C-k") #'jcode-cancel)
 (define-key jcode-chat-mode-map (kbd "C-c C-d") #'jcode-disconnect)
+(define-key jcode-chat-mode-map (kbd "C-c C-p") #'jcode-menu)
 (define-key jcode-chat-mode-map (kbd "TAB") #'jcode-toggle-block)
 (define-key jcode-chat-mode-map (kbd "<tab>") #'jcode-toggle-block)
 
@@ -388,6 +392,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
     (define-key map (kbd "TAB") #'jcode-complete)
     (define-key map (kbd "C-c C-k") #'jcode-cancel)
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
+    (define-key map (kbd "C-c C-p") #'jcode-menu)
     (define-key map (kbd "C-c C-s") #'jcode-steer)
     (define-key map (kbd "M-p") #'jcode-previous-input)
     (define-key map (kbd "M-n") #'jcode-next-input)
@@ -399,6 +404,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
 (define-key jcode-input-mode-map (kbd "TAB") #'jcode-complete)
 (define-key jcode-input-mode-map (kbd "C-c C-k") #'jcode-cancel)
 (define-key jcode-input-mode-map (kbd "C-c C-d") #'jcode-disconnect)
+(define-key jcode-input-mode-map (kbd "C-c C-p") #'jcode-menu)
 (define-key jcode-input-mode-map (kbd "C-c C-s") #'jcode-steer)
 (define-key jcode-input-mode-map (kbd "@") nil)
 (define-key jcode-input-mode-map (kbd "/") nil)
@@ -409,6 +415,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
   "Major mode for composing jcode prompts."
   (setq-local header-line-format '(:eval (jcode--header-line)))
   (setq-local completion-at-point-functions nil)
+  (add-hook 'completion-at-point-functions #'jcode--slash-command-capf nil t)
   (add-hook 'completion-at-point-functions #'jcode--file-reference-capf nil t)
   (add-hook 'completion-at-point-functions #'jcode--path-capf nil t)
   (add-hook 'post-self-insert-hook #'jcode--maybe-complete-at nil t)

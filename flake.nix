@@ -98,7 +98,10 @@
           pname = "jcode-emacs";
           version = "0.1.0";
           src = packageSrc;
-          packageRequires = [ pkgs.emacsPackages.md-ts-mode ];
+          packageRequires = with pkgs.emacsPackages; [
+            transient
+            md-ts-mode
+          ];
           meta = {
             description = "Emacs frontend for jcode";
             license = lib.licenses.gpl3Plus;
@@ -111,9 +114,10 @@
         apps.jcode = flake-utils.lib.mkApp { drv = jcode; };
 
         checks.default = pkgs.runCommand "jcode-emacs-check" {
-          nativeBuildInputs = [ (pkgs.emacs.pkgs.withPackages (epkgs: [ epkgs.md-ts-mode ])) ];
+          nativeBuildInputs = [ (pkgs.emacs.pkgs.withPackages (epkgs: [ epkgs.transient epkgs.md-ts-mode ])) ];
         } ''
           cp ${packageSrc}/*.el .
+          test -f jcode-menu.el
           mkdir test
           cp ${./test}/*.el test/
           emacs --batch -Q -L . -f batch-byte-compile *.el

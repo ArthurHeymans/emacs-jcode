@@ -20,6 +20,9 @@
 (declare-function jcode-native-steer "jcode-native" (connection content))
 (declare-function jcode-native-cancel "jcode-native" (connection))
 (declare-function jcode-native-close "jcode-native" (connection))
+(declare-function jcode-execute-slash-command "jcode-menu" (command))
+
+(defvar jcode-slash-commands)
 
 (defvar jcode-input-ring-size 100
   "Maximum number of prompts to keep in input history.")
@@ -148,6 +151,13 @@
   (let ((completion-show-help nil))
     (completion-at-point)))
 
+(defun jcode--input-slash-command (text)
+  "Return known slash command represented by TEXT, or nil."
+  (when (and (boundp 'jcode-slash-commands)
+             (string-match-p "\\`/[[:alnum:]_-]+[[:space:]]*\\'" text))
+    (let ((command (car (split-string (string-trim text) "[[:space:]]+" t))))
+      (and (assoc command jcode-slash-commands) command))))
+
 (defun jcode--chat-buffer-for-command ()
   "Return chat buffer relevant to the current jcode command."
   (if (derived-mode-p 'jcode-chat-mode)
@@ -210,8 +220,11 @@ If a native session is busy, queue the text as a follow-up."
          (session (and (buffer-live-p chat)
                        (buffer-local-value 'jcode--session chat))))
     (cond
-     ((string-empty-p text)
-      (user-error "Prompt is empty"))
+	     ((string-empty-p text)
+	      (user-error "Prompt is empty"))
+	     ((jcode--input-slash-command text)
+	      (delete-region (point-min) (point-max))
+	      (jcode-execute-slash-command (jcode--input-slash-command text)))
      ((and native (jcode-native-connection-busy native))
       (jcode--history-add text)
       (delete-region (point-min) (point-max))
