@@ -138,8 +138,17 @@ and STATE is \"on\" or \"off\"."
   (if-let ((remote (file-remote-p directory)))
       (if (string-prefix-p remote socket)
           (substring socket (length remote))
-        socket)
+ socket)
     socket))
+
+(defun jcode-native--remote-bridge-available-p (cwd)
+  "Return non-nil if the remote bridge program is available for CWD."
+  (let ((default-directory cwd))
+    (ignore-errors (executable-find jcode-native-remote-bridge-program))))
+
+(defun jcode-native--remote-socket-available-p (socket)
+  "Return non-nil if remote SOCKET exists and is readable enough to connect."
+  (ignore-errors (file-exists-p socket)))
 
 (defun jcode-native--open-process (cwd socket)
   "Open a native protocol process for CWD using SOCKET."
@@ -147,6 +156,13 @@ and STATE is \"on\" or \"off\"."
       (let* ((default-directory cwd)
              (remote-socket (jcode-native--host-local-socket-path socket cwd))
              (proc (let ((process-connection-type nil))
+                     (unless (jcode-native--remote-bridge-available-p cwd)
+                       (user-error "Cannot open remote jcode: bridge program `%s' is not installed on %s"
+                                   jcode-native-remote-bridge-program
+                                   (file-remote-p cwd)))
+                     (unless (jcode-native--remote-socket-available-p socket)
+                       (user-error "Cannot open remote jcode: no daemon socket at %s. Start jcode on the remote host first"
+                                   remote-socket))
                      (start-file-process
                       "jcode-native-remote"
                       (generate-new-buffer " *jcode-native-remote* ")
@@ -666,7 +682,10 @@ and STATE is \"on\" or \"off\"."
             (jcode-native--handle-event connection (jcode-native--json-read line))
           (error (jcode-render-error
                   (jcode-native-connection-chat connection)
-                  (format "native parse error: %S" err))))))))
+                  (format "Native jcode protocol error: expected JSON from daemon, got %S (%s). If this is a remote session, ensure jcode is installed/running there and `%s' can connect to its socket."
+                          (string-trim line)
+                          (error-message-string err)
+                          jcode-native-remote-bridge-program))))))))
 
 (defun jcode-native-open-session (session-id cwd chat input)
   "Open native live SESSION-ID for CWD into CHAT and INPUT."

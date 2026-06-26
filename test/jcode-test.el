@@ -1092,7 +1092,11 @@
               ((symbol-function 'set-process-coding-system)
                (lambda (_proc in out) (setq coding (list in out))))
               ((symbol-function 'set-process-query-on-exit-flag)
-               (lambda (_proc flag) (setq noquery (not flag)))))
+               (lambda (_proc flag) (setq noquery (not flag))))
+              ((symbol-function 'jcode-native--remote-bridge-available-p)
+               (lambda (_cwd) t))
+              ((symbol-function 'jcode-native--remote-socket-available-p)
+               (lambda (_socket) t)))
       (let ((proc (jcode-native--open-process
                    "/ssh:test-host:/tmp/project/"
                    "/ssh:test-host:/run/user/1000/jcode.sock")))
@@ -1107,6 +1111,32 @@
               (should noquery))
           (when (process-live-p proc)
             (delete-process proc)))))))
+
+(ert-deftest jcode-native-open-process-remote-errors-when-bridge-missing ()
+  (cl-letf (((symbol-function 'jcode-native--remote-bridge-available-p)
+             (lambda (_cwd) nil))
+            ((symbol-function 'jcode-native--remote-socket-available-p)
+             (lambda (_socket) t))
+            ((symbol-function 'start-file-process)
+             (lambda (&rest _args) (error "should not start"))))
+    (should-error
+     (jcode-native--open-process
+      "/ssh:test-host:/tmp/project/"
+      "/ssh:test-host:/run/user/1000/jcode.sock")
+     :type 'user-error)))
+
+(ert-deftest jcode-native-open-process-remote-errors-when-socket-missing ()
+  (cl-letf (((symbol-function 'jcode-native--remote-bridge-available-p)
+             (lambda (_cwd) t))
+            ((symbol-function 'jcode-native--remote-socket-available-p)
+             (lambda (_socket) nil))
+            ((symbol-function 'start-file-process)
+             (lambda (&rest _args) (error "should not start"))))
+    (should-error
+     (jcode-native--open-process
+      "/ssh:test-host:/tmp/project/"
+      "/ssh:test-host:/run/user/1000/jcode.sock")
+     :type 'user-error)))
 
 (ert-deftest jcode-native-open-process-local-uses-unix-socket ()
   (let (network-args started-file)
