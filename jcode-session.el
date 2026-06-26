@@ -98,6 +98,8 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
   "Return a human-readable string for jcode session STATUS."
   (cond
    ((null status) "")
+   ((equal status "Active") "live")
+   ((equal status "Closed") "closed")
    ((stringp status) status)
    ((symbolp status) (symbol-name status))
    ;; Ex: ((Crashed (message . "Terminal or window closed (SIGHUP)")))
@@ -137,9 +139,7 @@ When nil, use ~/.jcode/sessions on the local or TRAMP host of
 (defun jcode--session-display-title (info)
   "Return display title for session INFO."
   (or (jcode-session-info-title info)
-      (when (and (string= (jcode--session-status-string
-                           (jcode-session-info-status info))
-                          "Active")
+      (when (and (equal (jcode-session-info-status info) "Active")
                  (jcode-session-info-server-name info)
                  (jcode-session-info-short-name info))
         (format "%s %s"

@@ -192,6 +192,8 @@
              :model "claude-sonnet-4"
              :reasoning-effort "xhigh"
              :context-window 200000000
+             :client-count 2
+             :owner 'owned
              :token-usage-totals '((input_tokens . 64000000)
                                    (output_tokens . 171100)
                                    (cache_read_input_tokens . 60900000))))
@@ -202,6 +204,7 @@
               (should (string-match-p "anthropic (oauth).*sonnet-4" header))
               (should (string-match-p "xhigh" header))
               (should-not (string-match-p "think xhigh" header))
+              (should (string-match-p "owner Emacs clients 2" header))
               (should (string-match-p "context 64\\.0M/200\\.0M" header))
               (should (string-match-p "session output 171\\.1k" header))
               (should (string-match-p "cached 60\\.9M" header))
@@ -562,6 +565,8 @@
       (kill-buffer input))))
 
 (ert-deftest jcode-session-status-string-handles-structured-status ()
+  (should (equal (jcode--session-status-string "Active") "live"))
+  (should (equal (jcode--session-status-string "Closed") "closed"))
   (should (equal (jcode--session-status-string
                   '((Crashed (message . "Terminal or window closed (SIGHUP)"))))
                  "Crashed: Terminal or window closed (SIGHUP)"))
@@ -608,12 +613,16 @@
            '((type . "history")
              (server_name . "garden")
              (provider_model . "gpt-test")
+             (client_count . 3)
+             (connection_type . "websocket")
              (messages . [((role . "user") (content . "hi"))
                           ((role . "assistant") (content . "hello"))])))
           (with-current-buffer chat
             (should (string-match-p "hi" (buffer-string)))
             (should (string-match-p "hello" (buffer-string)))
-            (should (equal jcode--display-model "gpt-test"))))
+            (should (equal jcode--display-model "gpt-test"))
+            (should (equal jcode--display-client-count 3))
+            (should (equal jcode--display-connection-type "websocket"))))
       (kill-buffer chat)
       (kill-buffer input))))
 

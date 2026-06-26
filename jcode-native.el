@@ -12,7 +12,8 @@
 (require 'jcode-session)
 
 (cl-defstruct (jcode-native-connection (:constructor jcode--make-native-connection))
-  process chat input session-id cwd next-id line-buffer poll-timer last-history-size busy followup-queue)
+  process chat input session-id cwd next-id line-buffer poll-timer last-history-size
+  busy followup-queue takeover)
 
 (defvar-local jcode--native-connection nil)
 
@@ -235,6 +236,8 @@ history."
         (total-tokens (alist-get 'total_tokens event))
         (token-usage-totals (alist-get 'token_usage_totals event))
         (context-window (jcode-native--event-context-window event))
+        (client-count (alist-get 'client_count event))
+        (connection-type (alist-get 'connection_type event))
         (activity (alist-get 'activity event))
         (available-models (append (alist-get 'available_models event) nil)))
     (dolist (buffer (list (jcode-native-connection-chat connection)
@@ -251,6 +254,9 @@ history."
        :total-tokens total-tokens
        :token-usage-totals token-usage-totals
        :context-window context-window
+       :client-count client-count
+       :connection-type connection-type
+       :owner (if (jcode-native-connection-takeover connection) 'owned 'viewing)
        :activity activity
        :available-models available-models))))
 
@@ -358,10 +364,15 @@ history."
      :target_session_id session-id
      :client_has_local_history (if jcode-native-take-over-active-session t :false)
      :allow_session_takeover (if jcode-native-take-over-active-session t :false))
-    (setf (jcode-native-connection-poll-timer connection)
+       (setf (jcode-native-connection-poll-timer connection)
           (run-with-timer jcode-native-poll-interval
                           jcode-native-poll-interval
                           #'jcode-native--poll connection))
+    (setf (jcode-native-connection-takeover connection)
+          jcode-native-take-over-active-session)
+    (dolist (buffer (list chat input))
+      (jcode--set-display-metadata
+       buffer :owner (if jcode-native-take-over-active-session 'owned 'viewing)))
     connection))
 
 (provide 'jcode-native)

@@ -78,6 +78,9 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defvar-local jcode--display-total-tokens nil)
 (defvar-local jcode--display-token-usage-totals nil)
 (defvar-local jcode--display-context-window nil)
+(defvar-local jcode--display-client-count nil)
+(defvar-local jcode--display-connection-type nil)
+(defvar-local jcode--display-owner nil)
 (defvar-local jcode--display-activity nil)
 (defvar-local jcode--available-models nil)
 (defvar-local jcode--killing-linked-buffer nil)
@@ -137,8 +140,26 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
      ((and (listp activity) (alist-get 'current_tool_name activity))
       (format "tool:%s" (alist-get 'current_tool_name activity)))
      ((and (listp activity) (eq (alist-get 'is_processing activity) t)) "streaming")
+     ((equal jcode--display-status "Active") "live")
+     ((equal jcode--display-status "Closed") "closed")
      (jcode--display-status jcode--display-status)
      (t "idle"))))
+
+(defun jcode--header-owner ()
+  "Return ownership/client status text for the header."
+  (let ((owner (pcase jcode--display-owner
+                 ('owned "owner Emacs")
+                 ('viewing "viewing")
+                 ((and (pred stringp) s) s)
+                 (_ nil)))
+        (clients (and (numberp jcode--display-client-count)
+                      (> jcode--display-client-count 0)
+                      (format "clients %s" jcode--display-client-count))))
+    (cond
+     ((and owner clients) (format " │ %s %s" owner clients))
+     (owner (format " │ %s" owner))
+     (clients (format " │ %s" clients))
+     (t ""))))
 
 (defun jcode--header-token-values ()
   "Return (INPUT OUTPUT CACHE-READ) token values for the header."
@@ -215,13 +236,15 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                  'local-map jcode--header-reasoning-map)
      " "
      (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
+     (propertize (jcode--header-owner) 'face 'jcode-dim-face)
      (jcode--header-context)
      (jcode--header-session-usage))))
 
 (cl-defun jcode--set-display-metadata (buffer &key session-id title status model
                                                reasoning-effort provider credential
                                                total-tokens token-usage-totals
-                                               context-window activity available-models)
+                                               context-window client-count connection-type owner
+                                               activity available-models)
   "Set display metadata in BUFFER."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -235,6 +258,9 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (when total-tokens (setq jcode--display-total-tokens total-tokens))
       (when token-usage-totals (setq jcode--display-token-usage-totals token-usage-totals))
       (when context-window (setq jcode--display-context-window context-window))
+      (when client-count (setq jcode--display-client-count client-count))
+      (when connection-type (setq jcode--display-connection-type connection-type))
+      (when owner (setq jcode--display-owner owner))
       (when activity (setq jcode--display-activity activity))
       (when available-models (setq jcode--available-models available-models))
       (setq header-line-format
