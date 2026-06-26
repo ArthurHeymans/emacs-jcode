@@ -132,6 +132,58 @@
     (should (eq (key-binding (kbd "<tab>")) #'jcode-toggle-block))
     (should-not (eq (key-binding (kbd "TAB")) #'indent-for-tab-command))))
 
+(ert-deftest jcode-input-mode-binds-history-isearch ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (should (eq (key-binding (kbd "C-r")) #'jcode-history-isearch-backward))))
+
+(ert-deftest jcode-history-isearch-goto-loads-history-and-restores-saved-input ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (jcode--history-add "first prompt")
+    (jcode--history-add "second prompt")
+    (insert "draft")
+    (setq jcode--history-isearch-saved-input (buffer-string))
+    (jcode--history-isearch-goto 0)
+    (should (equal (buffer-string) "second prompt"))
+    (jcode--history-isearch-goto 1)
+    (should (equal (buffer-string) "first prompt"))
+    (jcode--history-isearch-goto nil)
+    (should (equal (buffer-string) "draft"))))
+
+(ert-deftest jcode-decorate-tables-adds-display-overlay-with-canonical-text ()
+  (let ((chat (generate-new-buffer " *jcode-test-table-chat*")))
+    (unwind-protect
+        (with-current-buffer chat
+          (jcode-chat-mode)
+          (let ((raw "| Name | Notes |\n| ---- | ----- |\n| Jcode | a long table cell that can wrap |\n"))
+            (let ((inhibit-read-only t)) (insert raw))
+            (jcode-decorate-tables)
+            (should (equal (buffer-string) raw))
+            (let ((overlays (cl-remove-if-not
+                             (lambda (ov) (overlay-get ov 'jcode-table-overlay))
+                             (overlays-in (point-min) (point-max)))))
+              (should overlays)
+              (should (string-match-p "Jcode" (overlay-get (car overlays) 'display))))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-render-thinking-delta-collapses-and-toggles ()
+  (let ((chat (generate-new-buffer " *jcode-test-thinking-chat*"))
+        (jcode-thinking-display 'hidden))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-thinking-delta chat "planning\nmore detail")
+          (with-current-buffer chat
+            (should (string-match-p "▶ Thinking" (buffer-string)))
+            (should (string-match-p "Thinking: planning" (buffer-string)))
+            (should-not (string-match-p "more detail" (buffer-string)))
+            (goto-char (point-min))
+            (jcode-toggle-block)
+            (should (string-match-p "▼ Thinking" (buffer-string)))
+            (should (string-match-p "more detail" (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-append-preserves-visible-scroll-when-reading-history ()
   (let ((chat (generate-new-buffer " *jcode-test-scroll-chat*")))
     (unwind-protect

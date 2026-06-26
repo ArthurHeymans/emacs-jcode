@@ -557,7 +557,11 @@ and STATE is \"on\" or \"off\"."
       ("reasoning_delta"
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))
-         (jcode--set-display-metadata buffer :activity '((is_processing . t) (phase . "thinking")))))
+         (jcode--set-display-metadata buffer :activity '((is_processing . t) (phase . "thinking"))))
+       (when-let ((text (or (alist-get 'text event)
+                            (alist-get 'delta event)
+                            (alist-get 'content event))))
+         (jcode-render-thinking-delta chat text)))
       ("text_delta"
        (jcode-native--mark-busy connection)
        (dolist (buffer (list chat (jcode-native-connection-input connection)))

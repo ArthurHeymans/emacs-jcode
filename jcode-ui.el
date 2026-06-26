@@ -11,12 +11,15 @@
 (require 'subr-x)
 (require 'project)
 (require 'md-ts-mode nil t)
+(require 'jcode-table)
 
 (declare-function jcode-send "jcode-input")
 (declare-function jcode-cancel "jcode-input")
 (declare-function jcode-disconnect "jcode-input")
 (declare-function jcode-previous-input "jcode-input")
 (declare-function jcode-next-input "jcode-input")
+(declare-function jcode-history-isearch-backward "jcode-input")
+(declare-function jcode--history-isearch-setup "jcode-input")
 (declare-function jcode-complete "jcode-input")
 (declare-function jcode-steer "jcode-input")
 (declare-function jcode-select-model "jcode-native")
@@ -420,6 +423,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
     (define-key map (kbd "C-c C-d") #'jcode-disconnect)
     (define-key map (kbd "C-c C-p") #'jcode-menu)
     (define-key map (kbd "C-c C-s") #'jcode-steer)
+    (define-key map (kbd "C-r") #'jcode-history-isearch-backward)
     (define-key map (kbd "M-p") #'jcode-previous-input)
     (define-key map (kbd "M-n") #'jcode-next-input)
     map)
@@ -432,6 +436,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
 (define-key jcode-input-mode-map (kbd "C-c C-d") #'jcode-disconnect)
 (define-key jcode-input-mode-map (kbd "C-c C-p") #'jcode-menu)
 (define-key jcode-input-mode-map (kbd "C-c C-s") #'jcode-steer)
+(define-key jcode-input-mode-map (kbd "C-r") #'jcode-history-isearch-backward)
 (define-key jcode-input-mode-map (kbd "@") nil)
 (define-key jcode-input-mode-map (kbd "/") nil)
 (define-key jcode-input-mode-map (kbd "M-p") #'jcode-previous-input)
@@ -445,6 +450,7 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
   (add-hook 'completion-at-point-functions #'jcode--file-reference-capf nil t)
   (add-hook 'completion-at-point-functions #'jcode--path-capf nil t)
   (add-hook 'post-self-insert-hook #'jcode--maybe-complete-at nil t)
+  (add-hook 'isearch-mode-hook #'jcode--history-isearch-setup nil t)
   (add-hook 'kill-buffer-hook #'jcode--kill-linked-buffer nil t))
 
 (defun jcode--clear-chat-buffer (chat)
@@ -626,7 +632,8 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
             (let ((start (point)))
               (funcall inserter)
               (jcode--fontify-inserted-markdown start (point))
-              (jcode--hide-turn-heading-underlines start (point))))))
+              (jcode--hide-turn-heading-underlines start (point))
+              (jcode-decorate-tables)))))
       (dolist (state windows)
         (pcase-let ((`(,window ,at-bottom ,old-point ,old-start) state))
           (when (window-live-p window)
@@ -639,7 +646,7 @@ BUFFER before insertion.  Windows scrolled upward keep their position."
 (defun jcode--fontify-inserted-markdown (start end)
   "Refresh markdown highlighting for inserted region START to END.
 `md-ts-mode' hides markdown delimiters with text properties during font-lock.
-Streaming appends can otherwise leave raw markup visible until an idle refontify."
+Streaming appends otherwise can leave raw markup visible until idle refontify."
   (when (and (derived-mode-p 'md-ts-mode) (< start end))
     (ignore-errors
       (let ((fontify-start (save-excursion

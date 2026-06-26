@@ -32,6 +32,12 @@
 (defvar-local jcode--input-ring nil)
 (defvar-local jcode--input-ring-index nil)
 (defvar-local jcode--input-saved nil)
+(defvar-local jcode--history-isearch-active nil
+  "Non-nil while jcode input history isearch is active.")
+(defvar-local jcode--history-isearch-saved-input nil
+  "Input text saved before starting history isearch.")
+(defvar-local jcode--history-isearch-index nil
+  "Current input history index during history isearch.")
 (defvar-local jcode--project-files-cache nil)
 (defvar-local jcode--project-files-cache-time nil)
 
@@ -232,6 +238,95 @@
           (insert (or jcode--input-saved "")))
       (setq jcode--input-ring-index idx)
       (insert (ring-ref (jcode--input-ring) idx)))))
+
+(defun jcode-history-isearch-backward ()
+  "Search prompt history backward with incremental isearch.
+Matches are loaded directly into the input buffer, like readline history
+search.  Quit restores the input that was present before search started."
+  (interactive)
+  (let ((ring (jcode--input-ring)))
+    (when (ring-empty-p ring) (user-error "No history"))
+    (setq jcode--history-isearch-active t
+          jcode--history-isearch-saved-input (buffer-string)
+          jcode--history-isearch-index nil)
+    (isearch-backward nil t)))
+
+(defun jcode--history-isearch-setup ()
+  "Configure isearch for jcode prompt history search."
+  (when jcode--history-isearch-active
+    (setq isearch-message-prefix-add "history ")
+    (setq-local isearch-search-fun-function #'jcode--history-isearch-search-fun)
+    (setq-local isearch-wrap-function #'jcode--history-isearch-wrap)
+    (setq-local isearch-push-state-function #'jcode--history-isearch-push-state)
+    (setq-local isearch-lazy-count nil)
+    (add-hook 'isearch-mode-end-hook #'jcode--history-isearch-end nil t)))
+
+(defun jcode--history-isearch-end ()
+  "Clean up after jcode prompt history isearch."
+  (setq isearch-message-prefix-add nil)
+  (setq-local isearch-search-fun-function #'isearch-search-fun-default)
+  (setq-local isearch-wrap-function nil)
+  (setq-local isearch-push-state-function nil)
+  (kill-local-variable 'isearch-lazy-count)
+  (remove-hook 'isearch-mode-end-hook #'jcode--history-isearch-end t)
+  (when isearch-mode-end-hook-quit
+    (delete-region (point-min) (point-max))
+    (insert (or jcode--history-isearch-saved-input "")))
+  (unless isearch-suspended
+    (setq jcode--history-isearch-active nil
+          jcode--history-isearch-saved-input nil
+          jcode--history-isearch-index nil)))
+
+(defun jcode--history-isearch-goto (index)
+  "Load prompt history item INDEX into the input buffer.
+When INDEX is nil, restore the input saved before history search started."
+  (setq jcode--history-isearch-index index)
+  (delete-region (point-min) (point-max))
+  (if (and index (not (ring-empty-p (jcode--input-ring))))
+      (insert (ring-ref (jcode--input-ring) index))
+    (insert (or jcode--history-isearch-saved-input ""))))
+
+(defun jcode--history-isearch-search-fun ()
+  "Return search function used by jcode prompt history isearch."
+  (lambda (string bound noerror)
+    (let ((search-fun (isearch-search-fun-default))
+          (ring (jcode--input-ring))
+          found)
+      (or (funcall search-fun string bound noerror)
+          (unless bound
+            (condition-case nil
+                (progn
+                  (while (not found)
+                    (if isearch-forward
+                        (progn
+                          (when (null jcode--history-isearch-index)
+                            (error "End of history"))
+                          (let ((idx (1- jcode--history-isearch-index)))
+                            (jcode--history-isearch-goto (and (>= idx 0) idx)))
+                          (goto-char (point-min)))
+                      (let ((idx (1+ (or jcode--history-isearch-index -1))))
+                        (when (>= idx (ring-length ring))
+                          (error "Beginning of history"))
+                        (jcode--history-isearch-goto idx)
+                        (goto-char (point-max))))
+                    (setq isearch-barrier (point)
+                          isearch-opoint (point)
+                          found (funcall search-fun string nil noerror)))
+                  (point))
+              (error nil)))))))
+
+(defun jcode--history-isearch-wrap ()
+  "Wrap jcode prompt history isearch."
+  (jcode--history-isearch-goto
+   (if isearch-forward
+       (1- (ring-length (jcode--input-ring)))
+     nil))
+  (goto-char (if isearch-forward (point-min) (point-max))))
+
+(defun jcode--history-isearch-push-state ()
+  "Save jcode prompt history search state for isearch."
+  (let ((index jcode--history-isearch-index))
+    (lambda (_cmd) (jcode--history-isearch-goto index))))
 
 (defun jcode-send ()
   "Send current input buffer content to jcode.

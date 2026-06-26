@@ -26,8 +26,18 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
   :type 'natnum
   :group 'jcode)
 
+(defcustom jcode-thinking-display 'visible
+  "How completed/streamed reasoning text is shown in chat buffers.
+When set to `visible', reasoning blocks are expanded by default.  When set to
+`hidden', reasoning blocks show a one-line preview and can be expanded with TAB."
+  :type '(choice (const :tag "Visible" visible)
+                 (const :tag "Hidden" hidden))
+  :group 'jcode)
+
 (defvar-local jcode--tool-block-counter 0
   "Monotonic counter for jcode tool block ids in the current chat buffer.")
+(defvar-local jcode--thinking-overlay nil
+  "Current jcode thinking block overlay, if any.")
 
 (defconst jcode--edit-tool-names
   '("apply_patch" "patch" "edit" "edit update" "write" "multiedit")
@@ -100,6 +110,75 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
     (unless (equal (jcode--last-heading chat) "Assistant")
       (jcode--section chat "Assistant" 'jcode-assistant-face))
     (jcode-render-assistant-delta chat text)))
+
+(defun jcode--thinking-preview (text)
+  "Return compact preview for thinking TEXT."
+  (let* ((lines (split-string (or text "") "\n"))
+         (first (seq-find (lambda (line) (not (string-empty-p (string-trim line)))) lines))
+         (extra (max 0 (1- (length lines)))))
+    (format "Thinking: %s%s"
+            (jcode--truncate-end (or first "hidden") 72)
+            (if (> extra 0) (format " (%d more lines)" extra) ""))))
+
+(defun jcode--thinking-overlay-at-point ()
+  "Return thinking overlay at point, if any."
+  (or (seq-find (lambda (overlay) (overlay-get overlay 'jcode-thinking-block))
+                (overlays-at (point)))
+      (and (> (point) (point-min))
+           (seq-find (lambda (overlay) (overlay-get overlay 'jcode-thinking-block))
+                     (overlays-at (1- (point)))))))
+
+(defun jcode--render-thinking-overlay (overlay)
+  "Rewrite thinking OVERLAY from its stored text and collapsed state."
+  (let ((start (copy-marker (overlay-start overlay)))
+        (text (or (overlay-get overlay 'jcode-full-text) ""))
+        (collapsed (overlay-get overlay 'jcode-collapsed))
+        (inhibit-read-only t)
+        (buffer-read-only nil))
+    (save-excursion
+      (goto-char start)
+      (delete-region (overlay-start overlay) (overlay-end overlay))
+      (insert (propertize (if collapsed "▶ Thinking" "▼ Thinking")
+                          'face 'jcode-dim-face)
+              "\n")
+      (if collapsed
+          (insert (propertize (jcode--thinking-preview text) 'face 'jcode-collapsed-face) "\n")
+        (insert (propertize (string-trim-right text) 'face 'jcode-dim-face) "\n"))
+      (move-overlay overlay start (point)))
+    (set-marker start nil)))
+
+(defun jcode--toggle-thinking-overlay (overlay)
+  "Toggle collapsed state for thinking OVERLAY."
+  (when (and (overlayp overlay) (overlay-buffer overlay))
+    (with-current-buffer (overlay-buffer overlay)
+      (overlay-put overlay 'jcode-collapsed (not (overlay-get overlay 'jcode-collapsed)))
+      (jcode--render-thinking-overlay overlay))))
+
+(defun jcode-render-thinking-delta (chat text)
+  "Render reasoning/thinking TEXT in CHAT as a collapsible block."
+  (let ((text (jcode--sanitize-text text)))
+    (when (and (buffer-live-p chat) text (not (string-empty-p text)))
+      (with-current-buffer chat
+        (let ((overlay (and (overlayp jcode--thinking-overlay)
+                            (overlay-buffer jcode--thinking-overlay)
+                            jcode--thinking-overlay)))
+          (if overlay
+              (progn
+                (overlay-put overlay 'jcode-full-text
+                             (concat (or (overlay-get overlay 'jcode-full-text) "") text))
+                (jcode--render-thinking-overlay overlay))
+            (jcode--append-to-buffer-preserving-scroll
+             chat
+             (lambda ()
+               (unless (bolp) (insert "\n"))
+               (let ((start (point)))
+                 (insert "Thinking\n")
+                 (let ((new-overlay (make-overlay start (point) nil t nil)))
+                   (overlay-put new-overlay 'jcode-thinking-block t)
+                   (overlay-put new-overlay 'jcode-full-text text)
+                   (overlay-put new-overlay 'jcode-collapsed (eq jcode-thinking-display 'hidden))
+                   (setq jcode--thinking-overlay new-overlay)
+                   (jcode--render-thinking-overlay new-overlay)))))))))))
 
 (defun jcode-render-tool (chat params &optional update)
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
@@ -646,9 +725,12 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
 (defun jcode-toggle-block ()
   "Toggle the collapsible block at point."
   (interactive)
-  (if-let ((overlay (jcode--tool-block-overlay-at-point)))
-      (jcode--toggle-tool-overlay overlay)
-    (message "No collapsible jcode block at point")))
+  (cond
+   ((jcode--thinking-overlay-at-point)
+    (jcode--toggle-thinking-overlay (jcode--thinking-overlay-at-point)))
+   ((jcode--tool-block-overlay-at-point)
+    (jcode--toggle-tool-overlay (jcode--tool-block-overlay-at-point)))
+   (t (message "No collapsible jcode block at point"))))
 
 (defun jcode--update-tool-overlay (overlay name status text input intent raw-output)
   "Update existing tool OVERLAY with latest NAME, STATUS, TEXT, INPUT, and INTENT."
