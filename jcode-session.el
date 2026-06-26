@@ -39,6 +39,7 @@ messages, which are commonly created by opening jcode and doing nothing."
   [ ("Title" 28 t)
     ("Status" 10 t)
     ("Model" 16 t)
+    ("Turns" 7 t)
     ("Updated" 12 t)
     ("Project" 24 t) ]
   "Column format for `jcode-list-mode'.")
@@ -234,6 +235,12 @@ string."
         (file-name-nondirectory (directory-file-name dir))
       "")))
 
+(defun jcode--session-turn-count-string (info)
+  "Return display turn count for session INFO."
+  (if (numberp (jcode-session-info-conversation-count info))
+      (number-to-string (jcode-session-info-conversation-count info))
+    ""))
+
 (defun jcode-read-session-id (&optional directory prompt)
   "Read a jcode session id for DIRECTORY with PROMPT."
   (let* ((sessions (jcode-list-sessions-data directory))
@@ -261,6 +268,7 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
                   (jcode--session-status-string
                    (jcode-session-info-status info))
                   (or (jcode-session-info-model info) "")
+                  (jcode--session-turn-count-string info)
                   (jcode--relative-time-string
                    (jcode-session-info-updated-at info))
                   (jcode--session-project-label info)))))

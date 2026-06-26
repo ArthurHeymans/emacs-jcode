@@ -691,14 +691,16 @@
                 :short-name "shrimp"
                 :status "Closed"
                 :model "sonnet"
+                :conversation-count 7
                 :updated-at "2026-06-26T09:30:00Z"
                 :working-dir "/home/arthur/src/emacs-jcode")))
     (cl-letf (((symbol-function 'current-time) (lambda () now)))
       (let ((row (cadr (jcode--session-list-entry info))))
-        (should (= (length row) 5))
+        (should (= (length row) 6))
         (should (equal (aref row 0) "shrimp"))
-        (should (equal (aref row 3) "2h ago"))
-        (should (equal (aref row 4) "emacs-jcode"))
+        (should (equal (aref row 3) "7"))
+        (should (equal (aref row 4) "2h ago"))
+        (should (equal (aref row 5) "emacs-jcode"))
         (should-not (seq-some (lambda (cell)
                                 (and (stringp cell)
                                      (string-match-p "session_shrimp" cell)))
@@ -741,6 +743,9 @@
             (should (member "real" ids))
             (should (member "saved" ids)))
           (let ((jcode-hide-empty-sessions nil))
+            (should (equal (jcode-session-info-conversation-count
+                            (jcode--read-session-info real-file))
+                           1))
             (should (jcode--session-empty-p (jcode--read-session-info system-file)))
             (should (jcode--session-empty-p (jcode--read-session-info zero-file)))
             (should-not (jcode--session-empty-p (jcode--read-session-info real-file)))
