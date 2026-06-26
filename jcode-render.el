@@ -226,6 +226,44 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
         string
       (concat (substring string 0 (max 0 (1- width))) "…"))))
 
+(defun jcode--truncate-middle (string width)
+  "Truncate STRING to WIDTH characters with a middle ellipsis."
+  (let ((string (or string "")))
+    (cond
+     ((or (not width) (<= (length string) width)) string)
+     ((<= width 1) "…")
+     (t (let* ((budget (1- width))
+               (head (/ budget 2))
+               (tail (- budget head)))
+          (concat (substring string 0 head)
+                  "…"
+                  (substring string (- (length string) tail))))))))
+
+(defun jcode--truncate-path (path width)
+  "Return a TUI-like truncated PATH for WIDTH."
+  (let ((path (or path "")))
+    (if (or (not width) (<= (length path) width))
+        path
+      (let* ((parts (split-string (replace-regexp-in-string "\\\\" "/" path) "/" t))
+             (last (car (last parts)))
+             (marker (cond
+                      ((string-prefix-p "~/" path) "~/…/")
+                      ((string-prefix-p "./" path) "./…/")
+                      ((string-prefix-p "/" path) "/…/")
+                      (t "…/"))))
+        (if (and last (< (length marker) width))
+            (concat marker (jcode--truncate-middle last (- width (length marker))))
+          (jcode--truncate-middle path width))))))
+
+(defun jcode--tool-input-bool (input key)
+  "Return boolean-like KEY from structured tool INPUT."
+  (let ((value (jcode--tool-input-value input key)))
+    (and value (not (eq value :false)))))
+
+(defun jcode--tool-input-action (input fallback)
+  "Return action from INPUT or FALLBACK."
+  (or (jcode--tool-input-string input 'action) fallback))
+
 (defun jcode--tool-display-name (name)
   "Return TUI-like display name for tool NAME."
   (let ((name (or name "tool")))
@@ -263,12 +301,107 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
          (if (and query (not (string-empty-p query)))
              (format "%s '%s'" mode (jcode--truncate-end query 50))
            mode)))
-      ((or "webfetch" "websearch" "codesearch" "session_search" "conversation_search")
+      ((or "webfetch" "websearch" "codesearch" "session_search")
        (when-let ((query (or (jcode--tool-input-string input 'url)
                              (jcode--tool-input-string input 'query))))
          (format "'%s'" (jcode--truncate-end query 70))))
       ("batch"
        (format "%d calls" (or (jcode--tool-input-count input 'tool_calls) 0)))
+      ("browser"
+       (let ((action (jcode--tool-input-action input "browser")))
+         (pcase action
+           ((or "open" "new_tab")
+            (let ((url (jcode--tool-input-string input 'url)))
+              (if (and url (not (string-empty-p url)))
+                  (format "%s %s" (replace-regexp-in-string "_" " " action)
+                          (jcode--truncate-middle url 44))
+                (replace-regexp-in-string "_" " " action))))
+           ((or "type" "fill_form" "upload" "press" "eval" "scroll" "select_tab")
+            (let ((target (or (jcode--tool-input-string input 'selector)
+                              (jcode--tool-input-string input 'contains)
+                              (jcode--tool-input-string input 'text)
+                              (jcode--tool-input-string input 'key)
+                              (jcode--tool-input-string input 'path))))
+              (if (and target (not (string-empty-p target)))
+                  (format "%s %s" (replace-regexp-in-string "_" " " action)
+                          (jcode--truncate-middle target 36))
+                (replace-regexp-in-string "_" " " action))))
+           (_ (replace-regexp-in-string "_" " " action)))))
+      ((or "open" "launch")
+       (let ((action (jcode--tool-input-action input "open"))
+             (target (jcode--tool-input-string input 'target)))
+         (string-trim (format "%s %s" action (or target "")))))
+      ("bg"
+       (let ((action (jcode--tool-input-action input "bg"))
+             (task-id (jcode--tool-input-string input 'task_id)))
+         (if task-id (format "%s %s" action (jcode--truncate-middle task-id 20)) action)))
+      ("memory"
+       (let ((action (jcode--tool-input-action input "memory")))
+         (pcase action
+           ("remember"
+            (format "remember: %s"
+                    (jcode--truncate-end (or (jcode--tool-input-string input 'content) "") 35)))
+           ("recall"
+            (if-let ((query (jcode--tool-input-string input 'query)))
+                (format "recall '%s'" (jcode--truncate-middle query 35))
+              "recall (recent)"))
+           ("search"
+            (format "search '%s'"
+                    (jcode--truncate-middle (or (jcode--tool-input-string input 'query) "") 35)))
+           ((or "forget" "tag" "related")
+            (if-let ((id (jcode--tool-input-string input 'id)))
+                (format "%s %s" action (jcode--truncate-middle id 30))
+              action))
+           (_ action))))
+      ("initiative"
+       (let ((action (jcode--tool-input-action input "initiative"))
+             (id (jcode--tool-input-string input 'id))
+             (title (jcode--tool-input-string input 'title)))
+         (cond
+          ((and (equal action "create") title)
+           (format "create '%s'" (jcode--truncate-end title 30)))
+          ((and id (member action '("show" "focus" "update" "checkpoint")))
+           (format "%s %s" action (jcode--truncate-middle id 30)))
+          (t action))))
+      ("side_panel"
+       (let ((action (jcode--tool-input-action input "side_panel"))
+             (target (or (jcode--tool-input-string input 'title)
+                         (jcode--tool-input-string input 'page_id)
+                         (jcode--tool-input-string input 'file_path))))
+         (if target
+             (format "%s %s" action (jcode--truncate-middle target 40))
+           action)))
+      ("subagent"
+       (format "%s (%s)"
+               (or (jcode--tool-input-string input 'description) "task")
+               (or (jcode--tool-input-string input 'subagent_type) "agent")))
+      ("swarm"
+       (let* ((action (jcode--tool-input-action input "swarm"))
+              (target (or (jcode--tool-input-string input 'to_session)
+                          (jcode--tool-input-string input 'target_session)
+                          (jcode--tool-input-string input 'channel)))
+              (prompt (or (jcode--tool-input-string input 'prompt)
+                          (jcode--tool-input-string input 'message))))
+         (cond
+          ((and (equal action "spawn") prompt)
+           (format "spawn '%s'" (jcode--truncate-end prompt 34)))
+          ((and target prompt (member action '("dm" "message" "channel" "broadcast")))
+           (format "%s %s '%s'" action (jcode--truncate-middle target 24)
+                   (jcode--truncate-end prompt 34)))
+          (target (format "%s %s" action (jcode--truncate-middle target 24)))
+          (t action))))
+      ("conversation_search"
+       (cond
+        ((jcode--tool-input-string input 'query)
+         (format "'%s'" (jcode--truncate-middle (jcode--tool-input-string input 'query) 40)))
+        ((jcode--tool-input-bool input 'stats) "stats")
+        (t "history")))
+      ("lsp"
+       (let* ((op (or (jcode--tool-input-string input 'operation) "lsp"))
+              (file (or (jcode--tool-input-string input 'file_path) ""))
+              (short (file-name-nondirectory file))
+              (line (or (jcode--tool-input-string input 'line) "0")))
+         (format "%s %s:%s" op short line)))
       (_ nil))))
 
 (defun jcode--tool-summary (name status text input intent)

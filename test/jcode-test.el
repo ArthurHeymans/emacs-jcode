@@ -151,9 +151,31 @@
             (should (string-match-p "https://example.com" (buffer-string)))
             (goto-char (point-min))
             (search-forward "◌")
-            (should (eq (get-text-property (1- (point)) 'font-lock-face)
+              (should (eq (get-text-property (1- (point)) 'font-lock-face)
                         'jcode-tool-running-face))))
       (kill-buffer chat))))
+
+(ert-deftest jcode-tool-row-summarizes-native-tui-common-tools ()
+  (should (equal (jcode--tool-input-summary
+                  "browser" '((action . "open")
+                               (url . "https://example.com/a/b/c")) nil)
+                 "open https://example.com/a/b/c"))
+  (should (equal (jcode--tool-input-summary
+                  "memory" '((action . "remember")
+                              (content . "important project fact")) nil)
+                 "remember: important project fact"))
+  (should (equal (jcode--tool-input-summary
+                  "swarm" '((action . "dm")
+                             (to_session . "worker-1")
+                             (message . "please continue")) nil)
+                 "dm worker-1 'please continue'"))
+  (should (equal (jcode--tool-input-summary
+                  "conversation_search" '((stats . t)) nil)
+                 "stats"))
+  (should (equal (jcode--tool-input-summary
+                  "side_panel" '((action . "write")
+                                  (title . "Implementation notes")) nil)
+                 "write Implementation notes")))
 
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
