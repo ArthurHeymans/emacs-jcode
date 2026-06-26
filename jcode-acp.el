@@ -110,7 +110,7 @@
           (error
            (jcode-render-error
             (jcode-session-chat-buffer (jcode--acp-connection-session connection))
-            (format "Failed to parse ACP message: %S\n%s" err line))))))))
+            (format "Failed to parse ACP message: %S" err))))))))
 
 (defun jcode--acp-process-sentinel (proc event)
   "Render ACP process PROC lifecycle EVENT."

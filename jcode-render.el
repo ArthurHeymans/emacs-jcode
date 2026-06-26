@@ -5,6 +5,7 @@
 ;;; Code:
 
 (require 'jcode-ui)
+(require 'json)
 (require 'subr-x)
 (require 'button)
 (require 'seq)
@@ -94,9 +95,10 @@ the default of 0 matches that behavior.  Expanding the block shows full output."
 
 (defun jcode-render-assistant-message (chat text)
   "Render assistant message TEXT in CHAT with a heading when needed."
-  (unless (equal (jcode--last-heading chat) "Assistant")
-    (jcode--section chat "Assistant" 'jcode-assistant-face))
-  (jcode-render-assistant-delta chat text))
+  (unless (jcode-render-protocol-envelope chat text)
+    (unless (equal (jcode--last-heading chat) "Assistant")
+      (jcode--section chat "Assistant" 'jcode-assistant-face))
+    (jcode-render-assistant-delta chat text)))
 
 (defun jcode-render-tool (chat params &optional update)
   "Render tool PARAMS in CHAT.  UPDATE non-nil means this is an update."
@@ -612,48 +614,105 @@ MAX-LINES defaults to `jcode-tool-preview-lines'."
   "Render error TEXT in CHAT."
   (jcode--append chat (concat "\nError: " text "\n") 'jcode-error-face))
 
-(defun jcode--handle-session-update (session params)
-  "Render ACP session/update PARAMS for SESSION."
+(defun jcode--params-summary (params)
+  "Return a concise non-protocol summary for PARAMS."
+  (cond
+   ((null params) "")
+   ((and (listp params) (alist-get 'sessionId params))
+    (format "session %s" (alist-get 'sessionId params)))
+   ((and (listp params) (alist-get 'session_id params))
+    (format "session %s" (alist-get 'session_id params)))
+   ((and (listp params) (alist-get 'title params))
+    (format "%s" (alist-get 'title params)))
+   ((and (listp params) (alist-get 'status params))
+    (format "%s" (alist-get 'status params)))
+   ((and (listp params) (alist-get 'type params))
+    (format "%s" (alist-get 'type params)))
+   (t "received")))
+
+(defun jcode--render-event-summary (chat label params)
+  "Render concise event LABEL/PARAMS in CHAT without raw JSON-RPC data."
+  (let ((summary (jcode--params-summary params)))
+    (jcode-render-info chat
+                       (if (string-empty-p summary)
+                           label
+                         (format "%s: %s" label summary)))))
+
+(defun jcode--json-object-from-string (text)
+  "Return JSON object parsed from TEXT, or nil."
+  (when (and (stringp text) (string-prefix-p "{" (string-trim-left text)))
+    (condition-case nil
+        (let ((json-object-type 'alist)
+              (json-array-type 'vector)
+              (json-key-type 'symbol)
+              (json-false :false))
+          (json-read-from-string (string-trim text)))
+      (error nil))))
+
+(defun jcode--protocol-envelope-p (object)
+  "Return non-nil if OBJECT looks like a JSON-RPC envelope."
+  (and (listp object)
+       (equal (alist-get 'jsonrpc object) "2.0")
+       (alist-get 'method object)))
+
+(defun jcode--handle-session-update-for-chat (chat params)
+  "Render ACP session/update PARAMS into CHAT."
   (let* ((update (alist-get 'update params))
          (kind (alist-get 'sessionUpdate update)))
     (pcase kind
       ("agent_message_chunk"
-       (jcode-render-assistant-message
-        (jcode-session-chat-buffer session)
-        (jcode--event-text update)))
+       (jcode-render-assistant-message chat (jcode--event-text update)))
       ("user_message_chunk"
-       (jcode-render-user
-        (jcode-session-chat-buffer session)
-        (or (jcode--event-text update) "")))
+       (jcode-render-user chat (or (jcode--event-text update) "")))
       ("tool_call"
-       (jcode-render-tool (jcode-session-chat-buffer session) update nil))
+       (jcode-render-tool chat update nil))
       ("tool_call_update"
-       (jcode-render-tool (jcode-session-chat-buffer session) update t))
+       (jcode-render-tool chat update t))
       (_
-       (jcode-render-info
-        (jcode-session-chat-buffer session)
-        (format "session/update %S" params))))))
+       (jcode--render-event-summary
+        chat
+        (format "session/update %s" kind)
+        update)))))
+
+(defun jcode--handle-session-update (session params)
+  "Render ACP session/update PARAMS for SESSION."
+  (jcode--handle-session-update-for-chat (jcode-session-chat-buffer session) params))
+
+(defun jcode--handle-notification-for-chat (chat method params)
+  "Render ACP notification METHOD/PARAMS into CHAT."
+  (pcase method
+    ("session/update"
+     (jcode--handle-session-update-for-chat chat params))
+    ("agent_message_chunk"
+     (jcode-render-assistant-message chat (jcode--event-text params)))
+    ("user_message_chunk"
+     (jcode-render-user chat (or (jcode--event-text params) "")))
+    ("tool_call"
+     (jcode-render-tool chat params nil))
+    ("tool_call_update"
+     (jcode-render-tool chat params t))
+    ("session_info_update"
+     (jcode--render-event-summary chat "Session" params))
+    ("_jcode/server_event"
+     (jcode--render-event-summary chat "jcode event" params))
+    (_
+     (jcode--render-event-summary chat method params))))
+
+(defun jcode-render-protocol-envelope (chat text)
+  "Render JSON-RPC protocol envelope TEXT into CHAT when recognized.
+Return non-nil when TEXT was recognized and handled."
+  (when-let* ((object (jcode--json-object-from-string text))
+              (_ (jcode--protocol-envelope-p object)))
+    (jcode--handle-notification-for-chat
+     chat
+     (alist-get 'method object)
+     (alist-get 'params object))
+    t))
 
 (defun jcode-handle-notification (session method params)
   "Render ACP notification METHOD/PARAMS for SESSION."
-  (let ((chat (jcode-session-chat-buffer session)))
-    (pcase method
-      ("session/update"
-       (jcode--handle-session-update session params))
-      ("agent_message_chunk"
-       (jcode-render-assistant-message chat (jcode--event-text params)))
-      ("user_message_chunk"
-       (jcode-render-user chat (or (jcode--event-text params) "")))
-      ("tool_call"
-       (jcode-render-tool chat params nil))
-      ("tool_call_update"
-       (jcode-render-tool chat params t))
-      ("session_info_update"
-       (jcode-render-info chat (format "Session: %S" params)))
-      ("_jcode/server_event"
-       (jcode-render-info chat (format "jcode event: %S" params)))
-      (_
-       (jcode-render-info chat (format "%s %S" method params))))))
+  (jcode--handle-notification-for-chat
+   (jcode-session-chat-buffer session) method params))
 
 (provide 'jcode-render)
 ;;; jcode-render.el ends here

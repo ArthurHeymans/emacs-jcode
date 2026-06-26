@@ -48,6 +48,48 @@
             (should (string-match-p "hi" (buffer-string)))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-unknown-events-render-summary-not-raw-json ()
+  (let* ((chat (generate-new-buffer " *jcode-test-unknown-event-chat*"))
+         (session (jcode--make-session :id "s1" :chat-buffer chat)))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-handle-notification
+           session "session/update"
+           '((sessionId . "s1")
+             (update . ((sessionUpdate . "mystery_update")
+                        (jsonrpc . "2.0")
+                        (method . "secret/method")
+                        (params . ((large . "payload")))))))
+          (jcode-handle-notification
+           session "unknown/method"
+           '((jsonrpc . "2.0")
+             (method . "secret/method")
+             (params . ((large . "payload")))
+             (sessionId . "s1")))
+          (with-current-buffer chat
+            (let ((text (buffer-string)))
+              (should (string-match-p "mystery_update" text))
+              (should (string-match-p "unknown/method: session s1" text))
+              (should-not (string-match-p "jsonrpc" text))
+              (should-not (string-match-p "secret/method" text))
+              (should-not (string-match-p "large" text)))))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-assistant-content-jsonrpc-envelope-renders-inner-event ()
+  (let ((chat (generate-new-buffer " *jcode-test-jsonrpc-envelope-chat*"))
+        (envelope "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"s1\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"title\":\"Running shell command\",\"status\":\"completed\",\"content\":\"ok\"}}}"))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-assistant-message chat envelope)
+          (with-current-buffer chat
+            (let ((text (buffer-string)))
+              (should (string-match-p "Running shell command" text))
+              (should-not (string-match-p "jsonrpc" text))
+              (should-not (string-match-p "session/update" text)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-chat-mode-uses-markdown-rendering-when-available ()
   (let ((chat (generate-new-buffer " *jcode-test-md-chat*")))
     (unwind-protect
