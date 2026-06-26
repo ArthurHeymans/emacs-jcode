@@ -44,10 +44,6 @@ messages, which are commonly created by opening jcode and doing nothing."
     ("Project" 24 t) ]
   "Column format for `jcode-list-mode'.")
 
-(defconst jcode--session-list-help
-  "RET open  r resume  m/* mark  u unmark  U unmark all  t toggle  d delete  x/D delete marked  O open marked  P prune  g refresh  q quit"
-  "Header help text shown in `jcode-list-mode'.")
-
 (defun jcode--remote-prefix (&optional directory)
   "Return TRAMP prefix for DIRECTORY, or nil for local."
   (file-remote-p (or directory default-directory)))
@@ -304,18 +300,10 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
   (setq tabulated-list-format jcode--session-list-format)
   (setq tabulated-list-sort-key nil)
   (tabulated-list-init-header)
-  (jcode--session-list-apply-header-help)
   (setq tabulated-list-entries
         (mapcar #'jcode--session-list-entry
                 (jcode-list-sessions-data jcode--session-list-directory)))
   (tabulated-list-print t))
-
-(defun jcode--session-list-apply-header-help ()
-  "Show key help alongside the tabulated list header."
-  (setq header-line-format
-        (list (propertize jcode--session-list-help 'face 'jcode-dim-face)
-              "    "
-              header-line-format)))
 
 (defun jcode-list-mark ()
   "Mark the session at point and move to the next row."
@@ -485,13 +473,31 @@ With prefix argument RESUME-ONLY, attach without replay."
     map)
   "Keymap for `jcode-list-mode'.")
 
+;; Keep keymaps current when this package is reloaded during development.
+(set-keymap-parent jcode-list-mode-map tabulated-list-mode-map)
+(define-key jcode-list-mode-map (kbd "g") #'jcode-list-refresh)
+(define-key jcode-list-mode-map (kbd "m") #'jcode-list-mark)
+(define-key jcode-list-mode-map (kbd "*") #'jcode-list-mark)
+(define-key jcode-list-mode-map (kbd "u") #'jcode-list-unmark)
+(define-key jcode-list-mode-map (kbd "DEL") #'jcode-list-unmark-backward)
+(define-key jcode-list-mode-map (kbd "<backspace>") #'jcode-list-unmark-backward)
+(define-key jcode-list-mode-map (kbd "U") #'jcode-list-unmark-all)
+(define-key jcode-list-mode-map (kbd "t") #'jcode-list-toggle-mark)
+(define-key jcode-list-mode-map (kbd "d") #'jcode-list-delete-session)
+(define-key jcode-list-mode-map (kbd "x") #'jcode-list-delete-marked-sessions)
+(define-key jcode-list-mode-map (kbd "D") #'jcode-list-delete-marked-sessions)
+(define-key jcode-list-mode-map (kbd "O") #'jcode-list-open-marked-sessions)
+(define-key jcode-list-mode-map (kbd "P") #'jcode-prune-empty-sessions)
+(define-key jcode-list-mode-map (kbd "RET") #'jcode-list-open)
+(define-key jcode-list-mode-map (kbd "r") (lambda () (interactive) (jcode-list-open t)))
+(define-key jcode-list-mode-map (kbd "q") #'quit-window)
+
 (define-derived-mode jcode-list-mode tabulated-list-mode "Jcode-Sessions"
   "Major mode for listing jcode sessions."
   (setq tabulated-list-format jcode--session-list-format)
   (setq tabulated-list-sort-key nil)
   (setq tabulated-list-padding 2)
-  (tabulated-list-init-header)
-  (jcode--session-list-apply-header-help))
+  (tabulated-list-init-header))
 
 (provide 'jcode-session)
 ;;; jcode-session.el ends here

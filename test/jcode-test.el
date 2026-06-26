@@ -604,9 +604,7 @@
     (should (eq (key-binding (kbd "U")) #'jcode-list-unmark-all))
     (should (eq (key-binding (kbd "t")) #'jcode-list-toggle-mark))
     (should (eq (key-binding (kbd "x")) #'jcode-list-delete-marked-sessions))
-    (should (eq (key-binding (kbd "D")) #'jcode-list-delete-marked-sessions))
-    (should (string-match-p (regexp-quote jcode--session-list-help)
-                            (format "%S" header-line-format)))))
+    (should (eq (key-binding (kbd "D")) #'jcode-list-delete-marked-sessions))))
 
 (ert-deftest jcode-send-uses-native-connection-when-present ()
   (let* ((chat (generate-new-buffer " *jcode-test-native-send-chat*"))
