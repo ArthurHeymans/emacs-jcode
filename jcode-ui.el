@@ -77,6 +77,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defvar-local jcode--display-credential nil)
 (defvar-local jcode--display-total-tokens nil)
 (defvar-local jcode--display-token-usage-totals nil)
+(defvar-local jcode--display-context-window nil)
 (defvar-local jcode--display-activity nil)
 (defvar-local jcode--available-models nil)
 (defvar-local jcode--killing-linked-buffer nil)
@@ -139,8 +140,8 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
      (jcode--display-status jcode--display-status)
      (t "idle"))))
 
-(defun jcode--header-usage ()
-  "Return explicit token usage text for the header."
+(defun jcode--header-token-values ()
+  "Return (INPUT OUTPUT CACHE-READ) token values for the header."
   (let* ((totals jcode--display-token-usage-totals)
          (input (or (and (listp totals) (alist-get 'input_tokens totals))
                     (and (vectorp jcode--display-total-tokens)
@@ -151,10 +152,23 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                           (> (length jcode--display-total-tokens) 1)
                           (aref jcode--display-total-tokens 1))))
          (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals))))
+    (list input output cache-read)))
+
+(defun jcode--header-context ()
+  "Return current/max context usage text for the header."
+  (pcase-let ((`(,input _ ,_) (jcode--header-token-values)))
+    (if input
+        (format " │ context %s/%s"
+                (jcode--format-token-count input)
+                (jcode--format-token-count jcode--display-context-window))
+      "")))
+
+(defun jcode--header-session-usage ()
+  "Return explicit session token usage text for the header."
+  (pcase-let ((`(_ ,output ,cache-read) (jcode--header-token-values)))
     (concat
-     (if (or input output)
-         (format " │ usage input %s output %s" (jcode--format-token-count input)
-                 (jcode--format-token-count output))
+     (if output
+         (format " │ session output %s" (jcode--format-token-count output))
        "")
      (if (and cache-read (> cache-read 0))
          (format " cached %s" (jcode--format-token-count cache-read))
@@ -184,7 +198,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
   "Return compact native-style header line for the input buffer."
   (let* ((provider (jcode--header-provider))
          (model (jcode--shorten-model-name jcode--display-model))
-         (reasoning (format "think %s" (or jcode--display-reasoning-effort "?")))
+         (reasoning (or jcode--display-reasoning-effort "?"))
          (activity (jcode--header-activity)))
     (concat
      (propertize provider 'face 'jcode-dim-face)
@@ -201,12 +215,13 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                  'local-map jcode--header-reasoning-map)
      " "
      (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
-     (jcode--header-usage))))
+     (jcode--header-context)
+     (jcode--header-session-usage))))
 
 (cl-defun jcode--set-display-metadata (buffer &key session-id title status model
                                                reasoning-effort provider credential
                                                total-tokens token-usage-totals
-                                               activity available-models)
+                                               context-window activity available-models)
   "Set display metadata in BUFFER."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -219,6 +234,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (when credential (setq jcode--display-credential credential))
       (when total-tokens (setq jcode--display-total-tokens total-tokens))
       (when token-usage-totals (setq jcode--display-token-usage-totals token-usage-totals))
+      (when context-window (setq jcode--display-context-window context-window))
       (when activity (setq jcode--display-activity activity))
       (when available-models (setq jcode--available-models available-models))
       (setq header-line-format

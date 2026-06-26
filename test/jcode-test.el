@@ -191,6 +191,7 @@
              :credential "oauth"
              :model "claude-sonnet-4"
              :reasoning-effort "xhigh"
+             :context-window 200000000
              :token-usage-totals '((input_tokens . 64000000)
                                    (output_tokens . 171100)
                                    (cache_read_input_tokens . 60900000))))
@@ -199,9 +200,12 @@
           (with-current-buffer input
             (let ((header (jcode--header-line)))
               (should (string-match-p "anthropic (oauth).*sonnet-4" header))
-              (should (string-match-p "think xhigh" header))
-              (should (string-match-p "usage input 64\\.0M output 171\\.1k" header))
+              (should (string-match-p "xhigh" header))
+              (should-not (string-match-p "think xhigh" header))
+              (should (string-match-p "context 64\\.0M/200\\.0M" header))
+              (should (string-match-p "session output 171\\.1k" header))
               (should (string-match-p "cached 60\\.9M" header))
+              (should-not (string-match-p "usage input" header))
               (should-not (string-match-p "ctx" header))
               (should-not (string-match-p "emacs-jcode" header)))))
       (kill-buffer chat)
@@ -211,6 +215,22 @@
   (let ((connection (jcode--make-native-connection :process nil)))
     (should-error (jcode-native--send connection '(:type "set_model"))
                   :type 'user-error)))
+
+(ert-deftest jcode-header-context-shows-unknown-max-when-absent ()
+  (with-temp-buffer
+    (jcode-input-mode)
+    (jcode--set-display-metadata
+     (current-buffer)
+     :token-usage-totals '((input_tokens . 1200) (output_tokens . 300)))
+    (let ((header (jcode--header-line)))
+      (should (string-match-p "context 1\\.2k/?" header))
+      (should (string-match-p "session output 300" header)))))
+
+(ert-deftest jcode-native-event-context-window-recognizes-aliases ()
+  (should (equal (jcode-native--event-context-window '((max_context_tokens . 200000)))
+                 200000))
+  (should (equal (jcode-native--event-context-window '((context_window . 128000)))
+                 128000)))
 
 (ert-deftest jcode-command-from-chat-reuses-current-pair ()
   (let ((chat (generate-new-buffer " *jcode-test-command-chat*"))

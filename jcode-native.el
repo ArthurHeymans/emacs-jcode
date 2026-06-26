@@ -67,6 +67,15 @@ history."
         (json-false :false))
     (json-read-from-string line)))
 
+(defun jcode-native--event-context-window (event)
+  "Return context window/max-context tokens from EVENT, if present."
+  (or (alist-get 'context_window event)
+      (alist-get 'context_window_tokens event)
+      (alist-get 'max_context event)
+      (alist-get 'max_context_tokens event)
+      (alist-get 'context_limit event)
+      (alist-get 'context_limit_tokens event)))
+
 (defun jcode-native--send (connection object)
   "Send native protocol OBJECT through CONNECTION."
   (let ((process (and connection (jcode-native-connection-process connection))))
@@ -225,6 +234,7 @@ history."
         (credential (alist-get 'resolved_credential event))
         (total-tokens (alist-get 'total_tokens event))
         (token-usage-totals (alist-get 'token_usage_totals event))
+        (context-window (jcode-native--event-context-window event))
         (activity (alist-get 'activity event))
         (available-models (append (alist-get 'available_models event) nil)))
     (dolist (buffer (list (jcode-native-connection-chat connection)
@@ -240,6 +250,7 @@ history."
        :credential credential
        :total-tokens total-tokens
        :token-usage-totals token-usage-totals
+       :context-window context-window
        :activity activity
        :available-models available-models))))
 
@@ -258,11 +269,12 @@ history."
       ("tokens"
        (dolist (buffer (list chat (jcode-native-connection-input connection)))
          (jcode--set-display-metadata
-          buffer :token-usage-totals
+         buffer :token-usage-totals
           `((input_tokens . ,(alist-get 'input event))
             (output_tokens . ,(alist-get 'output event))
             (cache_read_input_tokens . ,(or (alist-get 'cache_read_input event) 0))
-            (cache_creation_input_tokens . ,(or (alist-get 'cache_creation_input event) 0))))))
+            (cache_creation_input_tokens . ,(or (alist-get 'cache_creation_input event) 0)))
+          :context-window (jcode-native--event-context-window event))))
       ("model_changed"
        (if-let ((error (alist-get 'error event)))
            (jcode-render-error chat error)
