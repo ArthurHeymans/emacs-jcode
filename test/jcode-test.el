@@ -813,6 +813,14 @@
             (kill-buffer input))
           (ignore-errors (delete-directory root t)))))))
 
+(ert-deftest jcode-buffer-name-distinguishes-remote-projects ()
+  (should (equal (jcode--buffer-name "chat" "/home/me/src/chomp/")
+                 "*jcode-chat: chomp*"))
+  (should (equal (jcode--buffer-name "chat" "/rpc:gmktec-k11:/home/me/src/chomp/")
+                 "*jcode-chat: chomp@rpc:gmktec-k11*"))
+  (should-not (equal (jcode--buffer-name "chat" "/home/me/src/chomp/")
+                     (jcode--buffer-name "chat" "/rpc:gmktec-k11:/home/me/src/chomp/"))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
@@ -1324,6 +1332,11 @@
                   '("~/" "/sshx:gmktec-k11:~/" "/scpx:gmktec-k11:~/"
                     "/rpc:gmktec-k11:~/"))))
     (should (equal sources '("~/" "/rpc:gmktec-k11:~/")))))
+
+(ert-deftest jcode-list-source-directories-includes-explicit-extra-sources ()
+  (let ((jcode-list-extra-source-directories '("/rpc:t480-arthur:~/")))
+    (should (member "/rpc:t480-arthur:~/"
+                    (jcode-list-source-directories "/rpc:gmktec-k11:~/")))))
 
 (ert-deftest jcode-list-open-uses-row-source-directory ()
   (let ((buffer (generate-new-buffer " *jcode-list-open-test*"))

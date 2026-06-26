@@ -471,8 +471,17 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
   "Return a buffer name for KIND, DIR, and optional SESSION-ID."
   (format "*jcode-%s: %s%s*"
           kind
-          (file-name-nondirectory (directory-file-name dir))
+          (jcode--buffer-directory-label dir)
           (if session-id (format "[%s]" session-id) "")))
+
+(defun jcode--buffer-directory-label (dir)
+  "Return a collision-resistant display label for jcode buffers in DIR."
+  (if-let ((remote (file-remote-p dir)))
+      (let* ((localname (or (file-remote-p dir 'localname) dir))
+             (project (file-name-nondirectory (directory-file-name localname))))
+        (format "%s@%s" project
+                (string-remove-suffix ":" (string-remove-prefix "/" remote))))
+    (file-name-nondirectory (directory-file-name dir))))
 
 (defun jcode--buffer-title-name (kind title session-id)
   "Return display buffer name for KIND, TITLE, and SESSION-ID."

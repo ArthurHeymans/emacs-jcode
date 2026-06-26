@@ -38,6 +38,15 @@ messages, which are commonly created by opening jcode and doing nothing."
   :type 'boolean
   :group 'jcode)
 
+(defcustom jcode-list-extra-source-directories nil
+  "Additional local or TRAMP host roots included by aggregate `jcode-list'.
+Each entry should be a directory on the host whose `~/.jcode/sessions' should be
+listed, for example \"/rpc:workstation:~/\".  These entries make cross-host
+session lists explicit instead of depending only on currently open TRAMP
+connections."
+  :type '(repeat directory)
+  :group 'jcode)
+
 (cl-defstruct (jcode-session-info (:constructor jcode--make-session-info))
   id title short-name working-dir status model provider updated-at created-at file
   last-pid server-name message-count conversation-count user-turn-count saved
@@ -408,13 +417,14 @@ to the same remote jcode daemon and should be queried once."
   "Return directories whose hosts should contribute to aggregate `jcode-list'."
   (jcode--dedupe-list-source-directories
    (delq nil
-         (append (list "~/"
-                       (when directory
-                         (if-let ((remote (file-remote-p directory)))
-                             (concat remote "~/")
-                           "~/")))
-                 (jcode--list-source-directories-from-buffers)
-                 (jcode--list-source-directories-from-tramp-connections)))))
+                 (append (list "~/"
+                               (when directory
+                                 (if-let ((remote (file-remote-p directory)))
+                                     (concat remote "~/")
+                                   "~/")))
+                         jcode-list-extra-source-directories
+                         (jcode--list-source-directories-from-buffers)
+                         (jcode--list-source-directories-from-tramp-connections)))))
 
 (defun jcode-list-sessions-data-aggregate (&optional directories)
   "Return session metadata aggregated across DIRECTORIES' hosts."
