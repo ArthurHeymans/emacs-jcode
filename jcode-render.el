@@ -6,8 +6,15 @@
 
 (require 'jcode-ui)
 (require 'subr-x)
+(require 'button)
+(require 'seq)
 
 (declare-function jcode-session-chat-buffer "jcode-acp")
+
+(defcustom jcode-tool-preview-lines 8
+  "Number of tool output lines to show before collapsing a block."
+  :type 'natnum
+  :group 'jcode)
 
 (defun jcode--sanitize-text (text)
   "Strip terminal control sequences and undesirable control chars from TEXT."
@@ -82,9 +89,105 @@
          (text (or (jcode--event-text params)
                    (when-let ((raw (jcode--alist-get-any '(rawInput input output) params)))
                      (if (stringp raw) raw (format "%S" raw))))))
-    (jcode--append chat (format "\n[%s: %s]\n" name status) 'jcode-tool-face)
-    (when (and text (not (string-empty-p text)))
-      (jcode--append chat (concat (jcode--sanitize-text text) "\n") 'jcode-tool-face))))
+    (jcode--insert-tool-block chat name status (jcode--sanitize-text text))))
+
+(defun jcode--tool-block-overlay-at-point ()
+  "Return the jcode tool block overlay at point, if any."
+  (seq-find (lambda (overlay) (overlay-get overlay 'jcode-tool-block))
+            (overlays-at (point))))
+
+(defun jcode--markdown-fence-delimiter (text)
+  "Return a markdown fence delimiter safe for TEXT."
+  (if (and text (string-match-p "```+" text))
+      "~~~"
+    "```"))
+
+(defun jcode--tool-block-body (text)
+  "Return markdown body for tool output TEXT."
+  (if (and text (not (string-empty-p text)))
+      (let ((fence (jcode--markdown-fence-delimiter text)))
+        (format "%s\n%s\n%s\n" fence (string-trim-right text) fence))
+    ""))
+
+(defun jcode--tool-preview (text)
+  "Return (PREVIEW . HIDDEN-COUNT) for tool output TEXT."
+  (let* ((lines (and text (split-string (string-trim-right text) "\n")))
+         (count (length lines)))
+    (if (and lines (> count jcode-tool-preview-lines))
+        (cons (string-join (seq-take lines jcode-tool-preview-lines) "\n")
+              (- count jcode-tool-preview-lines))
+      (cons text 0))))
+
+(defun jcode--insert-tool-toggle-button (label overlay)
+  "Insert a clickable LABEL linked to tool block OVERLAY."
+  (insert-text-button label
+                      'face 'jcode-collapsed-face
+                      'follow-link t
+                      'help-echo "mouse-1 or TAB: toggle tool output"
+                      'jcode-tool-block overlay
+                      'action (lambda (button)
+                                (when-let ((ov (button-get button 'jcode-tool-block)))
+                                  (jcode--toggle-tool-overlay ov)))))
+
+(defun jcode--render-tool-body (overlay)
+  "Rewrite OVERLAY body according to its collapsed state."
+  (let* ((header-end (overlay-get overlay 'jcode-header-end))
+         (text (or (overlay-get overlay 'jcode-full-text) ""))
+         (collapsed (overlay-get overlay 'jcode-collapsed))
+         (preview (jcode--tool-preview text))
+         (display-text (if collapsed (car preview) text))
+         (hidden (cdr preview))
+         (inhibit-read-only t))
+    (save-excursion
+      (goto-char header-end)
+      (delete-region header-end (overlay-end overlay))
+      (insert (jcode--tool-block-body display-text))
+      (when (> hidden 0)
+        (jcode--insert-tool-toggle-button
+         (if collapsed
+             (format "▸ %d more lines hidden, click or TAB to expand\n" hidden)
+           "▾ collapse tool output\n")
+         overlay))
+      (move-overlay overlay (overlay-start overlay) (point)))))
+
+(defun jcode--toggle-tool-overlay (overlay)
+  "Toggle collapsed state for tool block OVERLAY."
+  (when (and (overlayp overlay) (overlay-buffer overlay))
+    (with-current-buffer (overlay-buffer overlay)
+      (overlay-put overlay 'jcode-collapsed (not (overlay-get overlay 'jcode-collapsed)))
+      (jcode--render-tool-body overlay))))
+
+(defun jcode-toggle-block ()
+  "Toggle the collapsible block at point."
+  (interactive)
+  (if-let ((overlay (jcode--tool-block-overlay-at-point)))
+      (jcode--toggle-tool-overlay overlay)
+    (message "No collapsible jcode block at point")))
+
+(defun jcode--insert-tool-block (chat name status text)
+  "Insert a Pi-like collapsible tool block into CHAT."
+  (when (buffer-live-p chat)
+    (with-current-buffer chat
+      (let ((inhibit-read-only t)
+            (move (= (point) (point-max))))
+        (goto-char (point-max))
+        (unless (bolp) (insert "\n"))
+        (insert "\n")
+        (let ((start (point)))
+          (insert (propertize name 'font-lock-face 'jcode-tool-face)
+                  (propertize (format " %s\n" status) 'font-lock-face 'jcode-dim-face))
+          (let* ((header-end (point-marker))
+                 (preview (jcode--tool-preview text))
+                 (collapsed (> (cdr preview) 0))
+                 (overlay (make-overlay start (point) nil nil nil)))
+            (overlay-put overlay 'jcode-tool-block t)
+            (overlay-put overlay 'jcode-header-end header-end)
+            (overlay-put overlay 'jcode-full-text (or text ""))
+            (overlay-put overlay 'jcode-collapsed collapsed)
+            ;; Background only, so markdown/code syntax foregrounds survive.
+            (overlay-put overlay 'face 'jcode-tool-block-face)
+            (jcode--render-tool-body overlay)))
+        (when move (goto-char (point-max)))))))
 
 (defun jcode-render-info (chat text)
   "Render informational TEXT in CHAT."

@@ -62,6 +62,40 @@
           (should (eq (get 'jcode-chat-mode 'mode-class) 'special)))
       (kill-buffer chat))))
 
+(ert-deftest jcode-chat-mode-uses-native-inspired-face-remaps ()
+  (let ((chat (generate-new-buffer " *jcode-test-native-style-chat*")))
+    (unwind-protect
+        (with-current-buffer chat
+          (jcode-chat-mode)
+          (should (assq 'default face-remapping-alist))
+          (should (equal (cadr (assq 'default face-remapping-alist)) 'jcode-text-face))
+          (should (equal (cadr (assq 'font-lock-comment-face face-remapping-alist))
+                         'jcode-dim-face))
+          (should (equal (face-attribute 'jcode-heading-1-face :foreground nil t)
+                         "#ffd764")))
+      (kill-buffer chat))))
+
+(ert-deftest jcode-tool-block-collapses-and-expands-long-output ()
+  (let ((chat (generate-new-buffer " *jcode-test-tool-collapse-chat*"))
+        (jcode-tool-preview-lines 2))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-tool chat '((name . "bash")
+                                    (status . "done")
+                                    (text . "one\ntwo\nthree\nfour")))
+          (with-current-buffer chat
+            (should (string-match-p "one" (buffer-string)))
+            (should (string-match-p "two" (buffer-string)))
+            (should-not (string-match-p "three" (buffer-string)))
+            (should (string-match-p "2 more lines hidden" (buffer-string)))
+            (goto-char (point-min))
+            (search-forward "one")
+            (jcode-toggle-block)
+            (should (string-match-p "three" (buffer-string)))
+            (should (string-match-p "collapse tool output" (buffer-string)))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-sanitize-text-strips-terminal-controls ()
   (should (equal (jcode--sanitize-text "\033]0;title\ahello\033[31m red\033[0m")
                  "hello red"))
