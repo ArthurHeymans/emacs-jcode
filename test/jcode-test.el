@@ -199,9 +199,11 @@
           (with-current-buffer input
             (let ((header (jcode--header-line)))
               (should (string-match-p "anthropic (oauth).*sonnet-4" header))
-              (should (string-match-p "tokens in 64\\.0M out 171\\.1k" header))
-              (should (string-match-p "cache-read 60\\.9M" header))
-              (should-not (string-match-p "ctx" header)))))
+              (should (string-match-p "think xhigh" header))
+              (should (string-match-p "usage input 64\\.0M output 171\\.1k" header))
+              (should (string-match-p "cached 60\\.9M" header))
+              (should-not (string-match-p "ctx" header))
+              (should-not (string-match-p "emacs-jcode" header)))))
       (kill-buffer chat)
       (kill-buffer input))))
 

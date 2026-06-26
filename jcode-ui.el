@@ -153,11 +153,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
          (cache-read (and (listp totals) (alist-get 'cache_read_input_tokens totals))))
     (concat
      (if (or input output)
-         (format " │ tokens in %s out %s" (jcode--format-token-count input)
+         (format " │ usage input %s output %s" (jcode--format-token-count input)
                  (jcode--format-token-count output))
        "")
      (if (and cache-read (> cache-read 0))
-         (format " cache-read %s" (jcode--format-token-count cache-read))
+         (format " cached %s" (jcode--format-token-count cache-read))
        ""))))
 
 (defun jcode--header-provider ()
@@ -181,13 +181,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
      (t "provider ?"))))
 
 (defun jcode--header-line ()
-  "Return Pi-like header line text for current jcode buffer."
-  (let* ((session (or jcode--display-title jcode--display-session-id "new"))
-         (provider (jcode--header-provider))
+  "Return compact native-style header line for the input buffer."
+  (let* ((provider (jcode--header-provider))
          (model (jcode--shorten-model-name jcode--display-model))
-         (reasoning (or jcode--display-reasoning-effort "reasoning ?"))
-         (activity (jcode--header-activity))
-         (dir (abbreviate-file-name default-directory)))
+         (reasoning (format "think %s" (or jcode--display-reasoning-effort "?")))
+         (activity (jcode--header-activity)))
     (concat
      (propertize provider 'face 'jcode-dim-face)
      " │ "
@@ -203,8 +201,7 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
                  'local-map jcode--header-reasoning-map)
      " "
      (propertize (format "%-9s" activity) 'face 'jcode-dim-face)
-     (jcode--header-usage)
-     (propertize (format " │ %s │ %s" session dir) 'face 'jcode-dim-face))))
+     (jcode--header-usage))))
 
 (cl-defun jcode--set-display-metadata (buffer &key session-id title status model
                                                reasoning-effort provider credential
