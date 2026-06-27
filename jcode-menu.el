@@ -137,11 +137,18 @@ and set_compaction_mode.")
 
 (defun jcode--menu-desc-default-model ()
   "Return default model transient description."
-  (format "default model: %s" (jcode--menu-default-value 'jcode-default-model)))
+  (format "default model: %s"
+          (or (jcode-native-config-provider-value "default_model") "daemon")))
+
+(defun jcode--menu-desc-default-provider ()
+  "Return default provider transient description."
+  (format "default provider: %s"
+          (or (jcode-native-config-provider-value "default_provider") "daemon")))
 
 (defun jcode--menu-desc-default-effort ()
   "Return default effort transient description."
-  (format "default effort: %s" (jcode--menu-default-value 'jcode-default-reasoning-effort)))
+  (format "default effort: %s"
+          (or (jcode-native-config-provider-value "openai_reasoning_effort") "daemon")))
 
 (defun jcode--menu-desc-default-fast ()
   "Return default fast/service tier transient description."
@@ -302,28 +309,45 @@ An empty TITLE clears the custom title."
     (unless (equal choice "daemon") choice)))
 
 (defun jcode-set-default-model (&optional model)
-  "Set Emacs default MODEL for future native sessions."
+  "Set jcode daemon default MODEL for future native sessions."
   (interactive
    (let* ((chat (ignore-errors (jcode--menu-chat)))
           (models (and (buffer-live-p chat)
                        (buffer-local-value 'jcode--available-models chat)))
           (choices (append '("daemon") models nil))
-          (current (or jcode-default-model "daemon"))
+          (current (or (jcode-native-config-provider-value "default_model") "daemon"))
           (choice (if models
                       (completing-read (format "Default model (current: %s): " current)
-                                       choices nil t nil nil current)
-                    (read-string "Default model (empty = daemon): " nil nil jcode-default-model))))
+                                       choices nil nil nil nil current)
+                    (read-string "Default model (empty = daemon): " nil nil current))))
      (list choice)))
-  (setq jcode-default-model
-        (unless (or (string-empty-p (or model "")) (equal model "daemon")) model))
-  (message "Jcode: default model %s" (or jcode-default-model "daemon")))
+  (let ((value (unless (or (string-empty-p (or model "")) (equal model "daemon")) model)))
+    (jcode-native-config-set-provider-value "default_model" value)
+    (message "Jcode config: default model %s" (or value "daemon"))))
+
+(defun jcode-set-default-provider (&optional provider)
+  "Set jcode daemon default PROVIDER for future native sessions.
+Use `openai-oauth' to force ChatGPT/Codex OAuth instead of OpenAI API key."
+  (interactive
+   (let* ((choices '("daemon" "openai-oauth" "openai-api" "claude-oauth" "claude-api"
+                     "copilot" "gemini" "antigravity" "cursor" "bedrock" "openrouter"))
+          (current (or (jcode-native-config-provider-value "default_provider") "daemon"))
+          (choice (completing-read (format "Default provider (current: %s): " current)
+                                   choices nil nil nil nil current)))
+     (list choice)))
+  (let ((value (unless (or (string-empty-p (or provider ""))
+                           (member provider '("daemon" "auto" "clear")))
+                 provider)))
+    (jcode-native-config-set-provider-value "default_provider" value)
+    (message "Jcode config: default provider %s" (or value "daemon"))))
 
 (defun jcode-set-default-reasoning-effort (&optional effort)
-  "Set Emacs default reasoning EFFORT for future native sessions."
+  "Set jcode daemon OpenAI reasoning EFFORT for future native sessions."
   (interactive)
-  (setq jcode-default-reasoning-effort
-        (or effort (jcode--read-default-choice "Default effort: " jcode-native-reasoning-efforts)))
-  (message "Jcode: default effort %s" (or jcode-default-reasoning-effort "daemon")))
+  (let ((value (or effort (jcode--read-default-choice "Default effort: " jcode-native-reasoning-efforts))))
+    (jcode-native-config-set-provider-value "openai_reasoning_effort" value)
+    (ignore-errors (jcode--set-current-display-metadata :reasoning-effort value))
+    (message "Jcode config: default OpenAI effort %s" (or value "daemon"))))
 
 (defun jcode-set-default-fast-mode (&optional tier)
   "Set Emacs default service TIER for future native sessions."
@@ -491,6 +515,8 @@ An empty TITLE clears the custom title."
     ("-r" "review" jcode-select-review-state
      :description jcode--menu-desc-review)]
    ["Defaults (future sessions)"
+    ("P" "default provider" jcode-set-default-provider
+     :description jcode--menu-desc-default-provider)
     ("O" "default model" jcode-set-default-model
      :description jcode--menu-desc-default-model)
     ("E" "default effort" jcode-set-default-reasoning-effort

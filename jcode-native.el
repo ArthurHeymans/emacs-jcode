@@ -63,6 +63,11 @@ history."
   :type 'string
   :group 'jcode)
 
+(defcustom jcode-config-file (expand-file-name "~/.jcode/config.toml")
+  "Jcode daemon config file edited by Emacs default-setting commands."
+  :type 'file
+  :group 'jcode)
+
 (defcustom jcode-default-model nil
   "Model to select automatically for newly connected native sessions.
 Nil leaves the daemon/session default unchanged."
@@ -105,6 +110,116 @@ Each entry is (FEATURE . STATE), where FEATURE is a string like memory or swarm
 and STATE is \"on\" or \"off\"."
   :type '(alist :key-type string :value-type (choice (const "on") (const "off")))
   :group 'jcode)
+
+(defun jcode-native--toml-quote (value)
+  "Return VALUE as a TOML string literal."
+  (json-serialize (format "%s" value)))
+
+(defun jcode-native-config-provider-value (key)
+  "Return string value for provider config KEY from `jcode-config-file', or nil."
+  (when (file-readable-p jcode-config-file)
+    (with-temp-buffer
+      (insert-file-contents jcode-config-file)
+      (goto-char (point-min))
+      (let ((case-fold-search nil)
+            (found nil)
+            (in-provider nil))
+        (while (and (not found) (not (eobp)))
+          (let ((line (string-trim (buffer-substring-no-properties
+                                    (line-beginning-position) (line-end-position)))))
+            (cond
+             ((string-match-p "\\`\\[.*\\]\\'" line)
+              (setq in-provider (equal line "[provider]")))
+             ((and in-provider
+                   (string-match
+                    (concat "\\`" (regexp-quote key) "[[:space:]]*=[[:space:]]*\\(.*?\\)[[:space:]]*\\(?:#.*\\)?\\'")
+                    line))
+              (let ((raw (string-trim (match-string 1 line))))
+                (setq found
+                      (cond
+                       ((string-match "\\`\"\\(.*\\)\"\\'" raw)
+                        (condition-case nil
+                            (let ((json-string raw))
+                              (json-parse-string json-string))
+                          (error (match-string 1 raw))))
+                       ((member raw '("" "nil" "null")) nil)
+                       (t raw)))))))
+          (forward-line 1))
+        found))))
+
+(defun jcode-native-config-set-provider-value (key value)
+  "Set provider config KEY to VALUE in `jcode-config-file'.
+When VALUE is nil, remove KEY from the provider section."
+  (let* ((content (if (file-readable-p jcode-config-file)
+                      (with-temp-buffer
+                        (insert-file-contents jcode-config-file)
+                        (buffer-string))
+                    ""))
+         (lines (split-string content "\n"))
+         (out nil)
+         (in-provider nil)
+         (seen-provider nil)
+         (written nil)
+         (pattern (concat "\\`[[:space:]]*" (regexp-quote key) "[[:space:]]*=")))
+    (dolist (line lines)
+      (let ((trimmed (string-trim line)))
+        (when (and in-provider (string-match-p "\\`\\[.*\\]\\'" trimmed))
+          (when (and value (not written))
+            (push (format "%s = %s" key (jcode-native--toml-quote value)) out)
+            (setq written t))
+          (setq in-provider nil))
+        (when (equal trimmed "[provider]")
+          (setq in-provider t
+                seen-provider t))
+        (cond
+         ((and in-provider (string-match-p pattern line))
+          (when value
+            (push (format "%s = %s" key (jcode-native--toml-quote value)) out)
+            (setq written t)))
+         (t (push line out)))))
+    (unless seen-provider
+      (push "" out)
+      (push "[provider]" out)
+      (setq in-provider t))
+    (when (and value (not written))
+      (push (format "%s = %s" key (jcode-native--toml-quote value)) out))
+    (make-directory (file-name-directory jcode-config-file) t)
+    (with-temp-file jcode-config-file
+      (insert (string-join (nreverse out) "\n"))
+      (unless (bolp) (insert "\n")))))
+
+(defun jcode-native--configured-reasoning-effort ()
+  "Return configured provider reasoning effort for initial header display."
+  (or (jcode-native-config-provider-value "openai_reasoning_effort")
+      jcode-default-reasoning-effort))
+
+(defun jcode-native--configured-provider-display ()
+  "Return (PROVIDER CREDENTIAL MODEL) display defaults from jcode config."
+  (let* ((provider (jcode-native-config-provider-value "default_provider"))
+         (model (or (jcode-native-config-provider-value "default_model")
+                    jcode-default-model))
+         (credential nil))
+    (when (and model (string-match "\\`\\([^:]+\\):\\(.+\\)\\'" model))
+      (let ((prefix (match-string 1 model))
+            (bare (match-string 2 model)))
+        (setq model bare)
+        (unless provider (setq provider prefix))))
+    (pcase provider
+      ((or "openai-oauth" "openai")
+       (setq provider "openai")
+       (when (equal (jcode-native-config-provider-value "default_provider") "openai-oauth")
+         (setq credential "oauth")))
+      ("openai-api"
+       (setq provider "openai"
+             credential "api-key"))
+      ((or "claude-oauth" "claude")
+       (setq provider "claude")
+       (when (equal (jcode-native-config-provider-value "default_provider") "claude-oauth")
+         (setq credential "oauth")))
+      ("claude-api"
+       (setq provider "claude"
+             credential "api-key")))
+    (list provider credential model)))
 
 (defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
@@ -722,9 +837,16 @@ and STATE is \"on\" or \"off\"."
                             #'jcode-native--poll connection)))
     (setf (jcode-native-connection-takeover connection)
           jcode-native-take-over-active-session)
-    (dolist (buffer (list chat input))
-      (jcode--set-display-metadata
-       buffer :owner (if jcode-native-take-over-active-session 'owned 'viewing)))
+    (pcase-let ((`(,configured-provider ,configured-credential ,configured-model)
+                 (jcode-native--configured-provider-display)))
+      (dolist (buffer (list chat input))
+        (jcode--set-display-metadata
+         buffer
+         :owner (if jcode-native-take-over-active-session 'owned 'viewing)
+         :provider configured-provider
+         :credential configured-credential
+         :model configured-model
+         :reasoning-effort (jcode-native--configured-reasoning-effort))))
     (jcode-native--schedule-session-id-discovery connection)
     (jcode-native-apply-defaults connection)
     connection))
