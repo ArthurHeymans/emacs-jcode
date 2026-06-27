@@ -1366,6 +1366,46 @@
     (should (member "/rpc:t480-arthur:~/"
                     (jcode-list-source-directories "/rpc:gmktec-k11:~/")))))
 
+(ert-deftest jcode-list-source-directories-skips-stale-automatic-remote ()
+  (let ((jcode-list-extra-source-directories nil))
+    (cl-progv '(tramp-methods) '(nil)
+      (cl-letf (((symbol-function 'file-remote-p)
+                 (lambda (file &optional identification _connected)
+                   (when (and (stringp file) (string-prefix-p "/rpc:stale:" file))
+                     (pcase identification
+                       ('method "rpc")
+                       ('user nil)
+                       ('host "stale")
+                       ('port nil)
+                       ('hop nil)
+                       (_ "/rpc:stale:")))))
+                ((symbol-function 'tramp-dissect-file-name)
+                 (lambda (_file &optional _nodefault) 'stale-vec))
+                ((symbol-function 'tramp-get-connection-process)
+                 (lambda (_vec) nil)))
+        (should-not (member "/rpc:stale:~/"
+                            (jcode-list-source-directories "/rpc:stale:/tmp/")))))))
+
+(ert-deftest jcode-list-source-directories-keeps-explicit-stale-remote ()
+  (let ((jcode-list-extra-source-directories '("/rpc:stale:~/")))
+    (cl-progv '(tramp-methods) '(nil)
+      (cl-letf (((symbol-function 'file-remote-p)
+                 (lambda (file &optional identification _connected)
+                   (when (and (stringp file) (string-prefix-p "/rpc:stale:" file))
+                     (pcase identification
+                       ('method "rpc")
+                       ('user nil)
+                       ('host "stale")
+                       ('port nil)
+                       ('hop nil)
+                       (_ "/rpc:stale:")))))
+                ((symbol-function 'tramp-dissect-file-name)
+                 (lambda (_file &optional _nodefault) 'stale-vec))
+                ((symbol-function 'tramp-get-connection-process)
+                 (lambda (_vec) nil)))
+        (should (member "/rpc:stale:~/"
+                        (jcode-list-source-directories "/rpc:stale:/tmp/")))))))
+
 (ert-deftest jcode-session-row-id-uses-remote-working-directory ()
   (let* ((info (jcode--make-session-info
                 :id "remote-session"

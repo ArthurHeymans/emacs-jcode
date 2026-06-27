@@ -17,6 +17,7 @@
 (declare-function tramp-list-connections "tramp-cache" ())
 (declare-function tramp-make-tramp-file-name "tramp" (vec &optional localname))
 (declare-function tramp-dissect-file-name "tramp" (name &optional nodefault))
+(declare-function tramp-get-connection-process "tramp" (vec))
 (declare-function tramp-file-name-method "tramp" (vec))
 (declare-function tramp-file-name-user "tramp" (vec))
 (declare-function tramp-file-name-host "tramp" (vec))
@@ -350,19 +351,39 @@ other default-directory based commands."
   "Return source directory from ROW-ID."
   (if (consp row-id) (cdr row-id) jcode--session-list-directory))
 
+(defun jcode--remote-source-live-p (directory)
+  "Return non-nil when DIRECTORY is local or has a live TRAMP connection.
+This predicate is for automatic aggregate list sources discovered from the
+current buffer, other buffers, or TRAMP's connection cache.  It intentionally
+does not start a connection: dead or absent remote connection processes are
+treated as stale so refresh does not reconnect them."
+  (or (not (file-remote-p directory))
+      (and (fboundp 'tramp-dissect-file-name)
+           (fboundp 'tramp-get-connection-process)
+           (ignore-errors
+             (when-let* ((vec (tramp-dissect-file-name directory))
+                         (process (tramp-get-connection-process vec)))
+               (process-live-p process))))))
+
+(defun jcode--automatic-list-source-directory (directory)
+  "Return normalized automatic aggregate source for DIRECTORY when safe.
+Remote directories are included only while their TRAMP connection process is
+live, avoiding reconnects to stale remotes during `jcode-list-refresh'."
+  (when (and (stringp directory)
+             (jcode--remote-source-live-p directory))
+    (if-let ((remote (file-remote-p directory)))
+        (concat remote "~/")
+      "~/")))
+
 (defun jcode--list-source-directories-from-buffers ()
   "Return local and remote source directories known from live buffers."
   (let (dirs)
     (dolist (buffer (buffer-list))
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
-          (when (and (stringp default-directory)
-                     (or (not (file-remote-p default-directory))
-                         (file-remote-p default-directory)))
-            (push (if-let ((remote (file-remote-p default-directory)))
-                      (concat remote "~/")
-                    "~/")
-                  dirs)))))
+          (when-let ((source (jcode--automatic-list-source-directory
+                              default-directory)))
+            (push source dirs)))))
     dirs))
 
 (defun jcode--list-source-directories-from-tramp-connections ()
@@ -371,14 +392,17 @@ other default-directory based commands."
     (delq nil
           (mapcar (lambda (vec)
                     (ignore-errors
-                      (let ((name (file-name-as-directory
-                                   (tramp-make-tramp-file-name vec 'noloc))))
-                        ;; `tramp-make-tramp-file-name' can render a no-localname
-                        ;; connection as /method:host:./.  Session registries live
-                        ;; under the remote home, so use an explicit ~/ root.
-                        (if (string-match-p ":\\./\\'" name)
-                            (replace-regexp-in-string ":\\./\\'" ":~/" name)
-                          name))))
+                      (when-let ((process (and (fboundp 'tramp-get-connection-process)
+                                               (tramp-get-connection-process vec))))
+                        (when (process-live-p process)
+                          (let ((name (file-name-as-directory
+                                       (tramp-make-tramp-file-name vec 'noloc))))
+                            ;; `tramp-make-tramp-file-name' can render a no-localname
+                            ;; connection as /method:host:./.  Session registries live
+                            ;; under the remote home, so use an explicit ~/ root.
+                            (if (string-match-p ":\\./\\'" name)
+                                (replace-regexp-in-string ":\\./\\'" ":~/" name)
+                              name))))))
                   (tramp-list-connections)))))
 
 (defun jcode--normalize-list-source-directory (directory)
@@ -444,10 +468,8 @@ to the same remote jcode daemon and should be queried once."
   (jcode--dedupe-list-source-directories
    (delq nil
                  (append (list "~/"
-                               (when directory
-                                 (if-let ((remote (file-remote-p directory)))
-                                     (concat remote "~/")
-                                   "~/")))
+                              (when directory
+                                (jcode--automatic-list-source-directory directory)))
                          jcode-list-extra-source-directories
                          (jcode--list-source-directories-from-buffers)
                          (jcode--list-source-directories-from-tramp-connections)))))
