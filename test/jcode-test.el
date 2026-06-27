@@ -392,6 +392,25 @@
             (should (equal (get-text-property (match-beginning 0) 'display) ""))))
       (kill-buffer chat))))
 
+(ert-deftest jcode-turn-heading-labels-keep-marker-faces-after-fontification ()
+  (let ((chat (generate-new-buffer " *jcode-test-heading-face-chat*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (jcode-render-user chat "question")
+          (jcode-render-assistant-message chat "answer")
+          (with-current-buffer chat
+            (font-lock-ensure (point-min) (point-max))
+            (jcode--hide-turn-heading-underlines (point-min) (point-max))
+            (goto-char (point-min))
+            (search-forward "You")
+            (should (eq (get-text-property (match-beginning 0) 'face)
+                        'jcode-user-face))
+            (search-forward "Assistant")
+            (should (eq (get-text-property (match-beginning 0) 'face)
+                        'jcode-assistant-face))))
+      (kill-buffer chat))))
+
 (ert-deftest jcode-assistant-heading-face-does-not-leak-into-markdown ()
   (let ((chat (generate-new-buffer " *jcode-test-markdown-face-chat*")))
     (unwind-protect

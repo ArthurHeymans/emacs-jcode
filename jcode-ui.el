@@ -67,6 +67,11 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 (defface jcode-tool-face '((t :foreground "#787878")) "Native jcode tool name face." :group 'jcode)
 (defface jcode-tool-accent-face '((t :foreground "#ba8bff")) "Native jcode tool accent face." :group 'jcode)
 (defface jcode-tool-success-face '((t :foreground "#64b464")) "Native jcode tool success face." :group 'jcode)
+
+(defconst jcode--turn-heading-font-lock-keywords
+  '(("^\\(You\\)\n=+$" 1 'jcode-user-face prepend)
+    ("^\\(Assistant\\)\n=+$" 1 'jcode-assistant-face prepend))
+  "Font-lock rules for jcode chat turn heading labels.")
 (defface jcode-tool-warning-face '((t :foreground "#d6b85c")) "Native jcode tool warning face." :group 'jcode)
 (defface jcode-tool-error-face '((t :foreground "#dc6464")) "Native jcode tool error face." :group 'jcode)
 (defface jcode-tool-running-face '((t :foreground "#50c8dc")) "Native jcode running tool face." :group 'jcode)
@@ -406,6 +411,7 @@ are meaningful on that host instead of Emacs-only names like /ssh:host:/path/."
     (setq-local md-ts-hide-markup t)
     (when (fboundp 'md-ts--set-hide-markup)
       (md-ts--set-hide-markup t)))
+  (font-lock-add-keywords nil jcode--turn-heading-font-lock-keywords 'append)
   (add-hook 'kill-buffer-hook #'jcode--kill-linked-buffer nil t))
 
 (define-derived-mode jcode-chat-mode special-mode "Jcode-Chat"
@@ -679,14 +685,33 @@ Streaming appends otherwise can leave raw markup visible until idle refontify."
         (font-lock-ensure fontify-start end)))))
 
 (defun jcode--hide-turn-heading-underlines (start end)
-  "Hide setext underline markup for jcode turn headings between START and END."
+  "Decorate jcode turn headings between START and END.
+Hide the setext underline markup and restore the dedicated marker face on the
+visible heading text after markdown fontification."
   (save-excursion
     (goto-char (max (point-min) start))
     (while (re-search-forward "^\\(You\\|Assistant\\)\n\\(=+\\)$" end t)
+      (add-text-properties (match-beginning 1) (match-end 1)
+                           `(face ,(if (equal (match-string 1) "You")
+                                       'jcode-user-face
+                                     'jcode-assistant-face)
+                             rear-nonsticky (face)))
       (add-text-properties (match-beginning 2) (match-end 2)
                            '(invisible jcode-markup
                              display ""
                              rear-nonsticky (face invisible display))))))
+
+(defun jcode--redecorate-chat-buffers ()
+  "Refresh jcode-specific text properties in existing chat buffers."
+  (dolist (buffer (buffer-list))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (derived-mode-p 'jcode-chat-mode)
+          (let ((inhibit-read-only t))
+            (font-lock-add-keywords nil jcode--turn-heading-font-lock-keywords 'append)
+            (font-lock-flush (point-min) (point-max))
+            (font-lock-ensure (point-min) (point-max))
+            (jcode--hide-turn-heading-underlines (point-min) (point-max))))))))
 
 (defun jcode--append (buffer text &optional face)
   "Append TEXT to BUFFER with optional FACE."
@@ -720,6 +745,8 @@ Streaming appends otherwise can leave raw markup visible until idle refontify."
                                    'display ""
                                    'rear-nonsticky '(face invisible display))))
        (insert prefix heading "\n" underline "\n")))))
+
+(jcode--redecorate-chat-buffers)
 
 (provide 'jcode-ui)
 ;;; jcode-ui.el ends here
