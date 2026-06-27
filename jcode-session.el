@@ -267,8 +267,8 @@ case, fall back to matching the session working directory."
                               (equal jcode--display-session-id session-id))
                          (and (not (bound-and-true-p jcode--display-session-id))
                               (stringp working-dir)
-                              (string= (file-name-as-directory (expand-file-name default-directory))
-                                       (file-name-as-directory (expand-file-name working-dir))))))
+                              (string= (jcode--normalize-directory default-directory)
+                                       (jcode--normalize-directory working-dir)))))
             (let* ((owner (pcase jcode--display-owner
                             ('owned "owned")
                             ('viewing "viewing")
@@ -311,10 +311,36 @@ case, fall back to matching the session working directory."
   "Return INFO's source directory, falling back to FALLBACK."
   (or (jcode-session-info-source-directory info) fallback default-directory))
 
+(defun jcode--session-working-directory-for-source (info &optional fallback)
+  "Return INFO's working directory qualified for its source host.
+Remote session files store `working_dir' as a host-local path.  When a row is
+opened from an aggregate list, qualify that path with the row's TRAMP prefix so
+the resulting jcode buffers use the real project directory for `find-file' and
+other default-directory based commands."
+  (let* ((source (jcode--session-source-directory info fallback))
+         (working-dir (jcode-session-info-working-dir info))
+         (remote (and source (file-remote-p source)))
+         (directory
+          (cond
+           ((and (stringp working-dir) (not (string-empty-p working-dir))
+                 (file-remote-p working-dir))
+            working-dir)
+           ((and remote (stringp working-dir) (not (string-empty-p working-dir)))
+            (concat remote working-dir))
+           ((and (stringp working-dir) (not (string-empty-p working-dir)))
+            working-dir)
+           (t source))))
+    ;; Avoid `file-name-as-directory' here because it dispatches to TRAMP for
+    ;; remote names, and tests may use custom methods such as /rpc: before they
+    ;; are registered in a bare batch Emacs.
+    (if (and (stringp directory) (not (string-suffix-p "/" directory)))
+        (concat directory "/")
+      directory)))
+
 (defun jcode--session-row-id (info &optional fallback)
   "Return stable tabulated-list id for INFO."
   (cons (jcode-session-info-id info)
-        (jcode--session-source-directory info fallback)))
+        (jcode--session-working-directory-for-source info fallback)))
 
 (defun jcode--session-row-session-id (row-id)
   "Return session id from ROW-ID."

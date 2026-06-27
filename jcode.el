@@ -30,6 +30,7 @@
 (declare-function jcode-apply-session-info-to-buffers "jcode-session"
                   (session-id chat input))
 (declare-function jcode-list-source-directories "jcode-session" (&optional directory))
+(declare-function jcode--session-working-directory-for-source "jcode-session" (info &optional fallback))
 (defvar jcode--session-list-directories)
 (declare-function jcode-session-teardown "jcode-acp" (session))
 (declare-function jcode-native-open-session "jcode-native"
@@ -90,12 +91,16 @@ Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
   "Return an existing live jcode buffer pair for SESSION-ID, if any."
   (catch 'pair
     (let* ((info (ignore-errors (jcode--session-info-by-id session-id (jcode--project-directory))))
-           (working-dir (and info (jcode-session-info-working-dir info))))
+           (working-dir (and info (jcode--session-working-directory-for-source
+                                   info (jcode--project-directory)))))
       (dolist (chat (buffer-list))
         (when (and (buffer-live-p chat)
                    (with-current-buffer chat
                      (and (derived-mode-p 'jcode-chat-mode)
-                          (or (equal jcode--display-session-id session-id)
+                          (or (and (equal jcode--display-session-id session-id)
+                                   (or (not working-dir)
+                                       (string= (jcode--normalize-directory default-directory)
+                                                (jcode--normalize-directory working-dir))))
                               (and (not jcode--display-session-id)
                                    (stringp working-dir)
                                    (string= (jcode--normalize-directory default-directory)

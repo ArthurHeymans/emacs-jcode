@@ -1338,6 +1338,15 @@
     (should (member "/rpc:t480-arthur:~/"
                     (jcode-list-source-directories "/rpc:gmktec-k11:~/")))))
 
+(ert-deftest jcode-session-row-id-uses-remote-working-directory ()
+  (let* ((info (jcode--make-session-info
+                :id "remote-session"
+                :working-dir "/home/arthur/src/chomp"
+                :source-directory "/rpc:gmktec-k11:~/"))
+         (row-id (jcode--session-row-id info)))
+    (should (equal row-id
+                   '("remote-session" . "/rpc:gmktec-k11:/home/arthur/src/chomp/")))))
+
 (ert-deftest jcode-list-open-uses-row-source-directory ()
   (let ((buffer (generate-new-buffer " *jcode-list-open-test*"))
         resumed)
@@ -1378,6 +1387,35 @@
             (should-not opened)))
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-resume-does-not-reuse-same-id-at-wrong-directory ()
+  (let* ((wrong-dir "/rpc:gmktec-k11:~/")
+         (right-dir "/rpc:gmktec-k11:/home/arthur/src/chomp/")
+         (buffers (jcode--make-buffers wrong-dir "s-remote"))
+         (old-chat (car buffers))
+         (old-input (cdr buffers))
+         opened displayed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jcode--project-directory)
+                   (lambda () right-dir))
+                  ((symbol-function 'jcode--session-info-by-id)
+                   (lambda (_session-id &optional _directory)
+                     (jcode--make-session-info
+                      :id "s-remote"
+                      :working-dir "/home/arthur/src/chomp")))
+                  ((symbol-function 'jcode-native-open-session)
+                   (lambda (_session-id cwd _chat _input) (setq opened cwd)))
+                  ((symbol-function 'jcode--display-buffers)
+                   (lambda (chat input) (setq displayed (cons chat input)))))
+          (with-current-buffer old-chat
+            (setq jcode--display-session-id "s-remote"))
+          (let ((new-chat (jcode-resume "s-remote")))
+            (should-not (eq new-chat old-chat))
+            (should (equal opened right-dir))
+            (should (equal (with-current-buffer new-chat default-directory) right-dir))
+            (should (equal (with-current-buffer (cdr displayed) default-directory) right-dir))))
+      (dolist (buffer (list old-chat old-input (car displayed) (cdr displayed)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest jcode-resume-reuses-lazy-project-buffer-and-stamps-session-id ()
   (let* ((dir default-directory)

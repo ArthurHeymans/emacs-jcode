@@ -140,7 +140,12 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
 
 (defun jcode--normalize-directory (dir)
   "Normalize DIR for project/session comparisons."
-  (file-name-as-directory (expand-file-name dir)))
+  (if (file-remote-p dir)
+      ;; Avoid `expand-file-name' and `file-name-as-directory' for remote names:
+      ;; both dispatch through TRAMP and can fail before custom methods such as
+      ;; /rpc: are registered in a bare batch Emacs.
+      (if (string-suffix-p "/" dir) dir (concat dir "/"))
+    (file-name-as-directory (expand-file-name dir))))
 
 (defun jcode--kill-linked-buffer ()
   "Kill the chat/input buffer paired with the current jcode buffer."
