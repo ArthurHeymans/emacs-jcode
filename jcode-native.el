@@ -115,6 +115,27 @@ and STATE is \"on\" or \"off\"."
   "Return VALUE as a TOML string literal."
   (json-serialize (format "%s" value)))
 
+(defun jcode-native--toml-strip-comment (line)
+  "Return LINE without a TOML comment outside a string."
+  (let ((i 0)
+        (len (length line))
+        (in-string nil)
+        (escaped nil)
+        (comment-start nil))
+    (while (and (< i len) (not comment-start))
+      (let ((ch (aref line i)))
+        (cond
+         (escaped
+          (setq escaped nil))
+         ((and in-string (= ch ?\\))
+          (setq escaped t))
+         ((= ch ?\")
+          (setq in-string (not in-string)))
+         ((and (not in-string) (= ch ?#))
+          (setq comment-start i))))
+      (setq i (1+ i)))
+    (if comment-start (substring line 0 comment-start) line)))
+
 (defun jcode-native-config-provider-value (key)
   "Return string value for provider config KEY from `jcode-config-file', or nil."
   (when (file-readable-p jcode-config-file)
@@ -125,14 +146,15 @@ and STATE is \"on\" or \"off\"."
             (found nil)
             (in-provider nil))
         (while (and (not found) (not (eobp)))
-          (let ((line (string-trim (buffer-substring-no-properties
-                                    (line-beginning-position) (line-end-position)))))
+          (let ((line (string-trim (jcode-native--toml-strip-comment
+                                    (buffer-substring-no-properties
+                                     (line-beginning-position) (line-end-position))))))
             (cond
              ((string-match-p "\\`\\[.*\\]\\'" line)
               (setq in-provider (equal line "[provider]")))
              ((and in-provider
                    (string-match
-                    (concat "\\`" (regexp-quote key) "[[:space:]]*=[[:space:]]*\\(.*?\\)[[:space:]]*\\(?:#.*\\)?\\'")
+                    (concat "\\`" (regexp-quote key) "[[:space:]]*=[[:space:]]*\\(.*\\)\\'")
                     line))
               (let ((raw (string-trim (match-string 1 line))))
                 (setq found

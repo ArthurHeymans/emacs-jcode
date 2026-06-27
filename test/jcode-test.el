@@ -1786,6 +1786,15 @@
           (should-not (jcode-native-config-provider-value "default_provider")))
       (delete-file jcode-config-file))))
 
+(ert-deftest jcode-native-config-provider-values-preserve-hash-in-strings ()
+  (let ((jcode-config-file (make-temp-file "jcode-config" nil ".toml"
+                                           "# top comment\n[provider] # provider comment\ndefault_model = \"openai:gpt#5\" # inline comment\ndefault_provider = \"openai\\\"#oauth\"\n")))
+    (unwind-protect
+        (progn
+          (should (equal (jcode-native-config-provider-value "default_model") "openai:gpt#5"))
+          (should (equal (jcode-native-config-provider-value "default_provider") "openai\"#oauth")))
+      (delete-file jcode-config-file))))
+
 (ert-deftest jcode-menu-default-provider-and-effort-write-jcode-config ()
   (let ((jcode-config-file (make-temp-file "jcode-config" nil ".toml" "[provider]\n")))
     (unwind-protect
