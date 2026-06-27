@@ -128,7 +128,8 @@
 (defun jcode--start-acp (session)
   "Start `jcode acp' process and NDJSON JSON-RPC connection for SESSION."
   (let* ((default-directory (jcode-session-cwd session))
-         (command (append (list jcode-program "acp" "--cwd" default-directory)
+         (host-local-cwd (jcode--host-local-directory default-directory))
+         (command (append (list jcode-program "acp" "--cwd" host-local-cwd)
                           jcode-acp-extra-args))
          (proc (let ((process-connection-type nil))
                  (apply #'start-file-process
@@ -152,7 +153,7 @@
 
 (defun jcode--acp-load-params (session id)
   "Return ACP session/load or session/resume params for SESSION and ID."
-  `(:sessionId ,id :cwd ,(jcode-session-cwd session)))
+  `(:sessionId ,id :cwd ,(jcode--host-local-directory (jcode-session-cwd session))))
 
 (defun jcode--acp-prompt-params (session text)
   "Return ACP session/prompt params for SESSION and TEXT."
@@ -195,7 +196,7 @@
 (defun jcode-session-new (session &optional callback)
   "Create a daemon jcode session for SESSION."
   (jcode--request
-   session "session/new" `(:cwd ,(jcode-session-cwd session))
+   session "session/new" `(:cwd ,(jcode--host-local-directory (jcode-session-cwd session)))
     (lambda (result)
 	     (when-let ((id (or (alist-get 'sessionId result) (alist-get 'id result))))
 	       (setf (jcode-session-id session) id)

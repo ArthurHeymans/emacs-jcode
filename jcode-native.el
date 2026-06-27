@@ -833,6 +833,7 @@ When VALUE is nil, remove KEY from the provider section."
 (defun jcode-native-open-session (session-id cwd chat input)
   "Open native live SESSION-ID for CWD into CHAT and INPUT."
   (let* ((socket (jcode-native-socket-path cwd))
+         (host-local-cwd (jcode--host-local-directory cwd))
          (proc (jcode-native--open-process cwd socket))
          (connection (jcode--make-native-connection
                       :process proc :chat chat :input input :session-id session-id
@@ -848,7 +849,7 @@ When VALUE is nil, remove KEY from the provider section."
       (add-hook 'kill-buffer-hook #'jcode-native--kill-buffer-hook nil t))
     (jcode-native--request
      connection "subscribe"
-     :working_dir cwd
+     :working_dir host-local-cwd
      :target_session_id session-id
      :client_has_local_history (if jcode-native-take-over-active-session t :false)
      :allow_session_takeover (if jcode-native-take-over-active-session t :false))

@@ -147,6 +147,15 @@ When nil or unavailable, chat buffers fall back to `special-mode'."
       (if (string-suffix-p "/" dir) dir (concat dir "/"))
     (file-name-as-directory (expand-file-name dir))))
 
+(defun jcode--host-local-directory (dir)
+  "Return DIR as a directory path local to its host.
+For TRAMP paths, strip the remote prefix so paths sent to a remote jcode daemon
+are meaningful on that host instead of Emacs-only names like /ssh:host:/path/."
+  (let ((dir (jcode--normalize-directory dir)))
+    (if-let ((remote (file-remote-p dir)))
+        (substring dir (length remote))
+      dir)))
+
 (defun jcode--kill-linked-buffer ()
   "Kill the chat/input buffer paired with the current jcode buffer."
   (unless jcode--killing-linked-buffer
