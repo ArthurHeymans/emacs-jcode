@@ -401,15 +401,15 @@ Use `openai-oauth' to force ChatGPT/Codex OAuth instead of OpenAI API key."
 
 (defun jcode--slash-command-at-point ()
   "Return slash command bounds at point, or nil."
-  (when (and (derived-mode-p 'jcode-input-mode)
-             (save-excursion
-               (skip-chars-backward "^[:space:]\n")
-               (looking-at "/")))
+  (when (derived-mode-p 'jcode-input-mode)
     (let ((end (point))
           (start (save-excursion
-                   (skip-chars-backward "^[:space:]\n")
+                   (skip-chars-backward "^ \t\n\r")
                    (point))))
-      (cons start end))))
+      (when (save-excursion
+              (goto-char start)
+              (looking-at "/"))
+        (cons start end)))))
 
 (defun jcode--slash-command-capf ()
   "Completion-at-point function for jcode slash commands."
@@ -442,7 +442,7 @@ Use `openai-oauth' to force ChatGPT/Codex OAuth instead of OpenAI API key."
   (interactive
    (list (completing-read "Jcode command: " (mapcar #'car jcode-slash-commands) nil t)))
   (pcase command
-    ((or "/?" "/help") (jcode-menu))
+    ((or "/?" "/help") (call-interactively #'jcode-menu))
     ("/compact" (jcode-compact))
     ("/clear" (jcode-clear))
     ("/split" (jcode-split))

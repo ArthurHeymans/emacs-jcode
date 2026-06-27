@@ -2275,5 +2275,22 @@
     (should-not (buffer-live-p chat))
     (should-not (buffer-live-p input))))
 
+(ert-deftest jcode-slash-command-bounds-include-command-letters ()
+  (let ((input (generate-new-buffer " *jcode-test-slash-bounds*")))
+    (unwind-protect
+        (with-current-buffer input
+          (jcode-input-mode)
+          (insert "/sessions")
+          (should (equal (jcode--slash-command-at-point)
+                         (cons (point-min) (point-max))))
+          (erase-buffer)
+          (insert "please /sessions")
+          (should (equal (jcode--slash-command-at-point)
+                         (cons (+ (point-min) 7) (point-max))))
+          (erase-buffer)
+          (insert "not/a-command")
+          (should-not (jcode--slash-command-at-point)))
+      (kill-buffer input))))
+
 (provide 'jcode-test)
 ;;; jcode-test.el ends here
