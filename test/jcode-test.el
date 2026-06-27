@@ -1575,8 +1575,41 @@
             (search-forward "Remote")
             (beginning-of-line)
             (jcode-list-open))
-          (should (equal resumed '("remote-session" t "/rpc:test:~/"))))
+	  (should (equal resumed '("remote-session" t "/rpc:test:~/"))))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest jcode-resume-uses-persisted-working-directory ()
+  (let (created opened displayed)
+    (cl-letf (((symbol-function 'jcode--project-directory)
+               (lambda () "~/"))
+              ((symbol-function 'jcode--session-info-by-id)
+               (lambda (session-id directory)
+                 (should (equal session-id "saved-cwd"))
+                 (should (equal directory "~/"))
+                 (jcode--make-session-info
+                  :id session-id
+                  :working-dir "/tmp/saved-project")))
+              ((symbol-function 'jcode--make-buffers)
+               (lambda (dir session-id)
+                 (setq created (list dir session-id))
+                 (cons (generate-new-buffer " *jcode-test-resume-chat*")
+                       (generate-new-buffer " *jcode-test-resume-input*"))))
+              ((symbol-function 'jcode-apply-session-info-to-buffers) #'ignore)
+              ((symbol-function 'jcode--display-buffers)
+               (lambda (chat input) (setq displayed (cons chat input))))
+              ((symbol-function 'jcode-native-open-session)
+               (lambda (session-id dir chat input)
+                 (setq opened (list session-id dir chat input)))))
+      (unwind-protect
+          (progn
+            (jcode-resume "saved-cwd")
+            (should (equal created '("/tmp/saved-project/" "saved-cwd")))
+            (should (equal (list (nth 0 opened) (nth 1 opened))
+                           '("saved-cwd" "/tmp/saved-project/")))
+            (should displayed))
+        (when displayed
+          (when (buffer-live-p (car displayed)) (kill-buffer (car displayed)))
+          (when (buffer-live-p (cdr displayed)) (kill-buffer (cdr displayed))))))))
 
 (ert-deftest jcode-resume-reuses-existing-session-buffer-pair ()
   (let* ((dir default-directory)

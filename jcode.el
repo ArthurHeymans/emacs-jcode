@@ -190,6 +190,16 @@ session takeover so this client receives live streaming updates."
         (jcode-native-open-session session-id dir chat input)))
     chat))
 
+(defun jcode--resume-directory (session-id &optional registry-directory)
+  "Return best directory for resuming SESSION-ID.
+Prefer the persisted session `working_dir' from REGISTRY-DIRECTORY's session
+registry so reopening from `jcode-list' after an Emacs restart restores the
+original project cwd instead of using the list buffer's home/default directory."
+  (let* ((source (or registry-directory (jcode--project-directory)))
+         (info (ignore-errors (jcode--session-info-by-id session-id source))))
+    (or (and info (jcode--session-working-directory-for-source info source))
+        source)))
+
 ;;;###autoload
 (defun jcode (&optional session-id)
   "Open jcode buffers for the current project.
@@ -221,7 +231,8 @@ With prefix argument FULL-LOAD, call ACP `session/load' for history replay."
   (interactive (list (jcode-read-session-id (jcode--project-directory)) current-prefix-arg))
   (if-let ((existing (jcode--buffer-pair-for-session-id session-id)))
       (jcode--show-session-buffers (car existing) (cdr existing))
-    (let* ((dir (jcode--project-directory))
+    (let* ((source-dir (jcode--project-directory))
+           (dir (jcode--resume-directory session-id source-dir))
            (buffers (jcode--make-buffers dir session-id))
            (chat (car buffers))
            (input (cdr buffers)))
