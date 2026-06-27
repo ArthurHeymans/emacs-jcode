@@ -363,7 +363,23 @@ treated as stale so refresh does not reconnect them."
            (ignore-errors
              (when-let* ((vec (tramp-dissect-file-name directory))
                          (process (tramp-get-connection-process vec)))
-               (process-live-p process))))))
+              (process-live-p process))))))
+
+(defun jcode--local-host-name-p (host)
+  "Return non-nil when HOST names this machine."
+  (when (and (stringp host) (not (string-empty-p host)))
+    (let* ((host (downcase (substring-no-properties host)))
+           (system (downcase (system-name)))
+           (short (car (split-string system "\\."))))
+      (member host (delq nil (list "localhost" "127.0.0.1" "::1" system short))))))
+
+(defun jcode--local-remote-source-p (directory)
+  "Return non-nil when remote DIRECTORY safely refers to this local user/host."
+  (and (file-remote-p directory)
+       (let ((host (file-remote-p directory 'host))
+             (user (file-remote-p directory 'user)))
+         (and (jcode--local-host-name-p host)
+              (or (null user) (string= user (user-login-name)))))))
 
 (defun jcode--automatic-list-source-directory (directory)
   "Return normalized automatic aggregate source for DIRECTORY when safe.
@@ -409,9 +425,26 @@ live, avoiding reconnects to stale remotes during `jcode-list-refresh'."
   "Normalize aggregate list source DIRECTORY to a host home root."
   (when directory
     (let ((dir (if (string-suffix-p "/" directory) directory (concat directory "/"))))
-      (if (string-match-p ":\\./\\'" dir)
-          (replace-regexp-in-string ":\\./\\'" ":~/" dir)
-        dir))))
+      (setq dir (if (string-match-p ":\\./\\'" dir)
+                    (replace-regexp-in-string ":\\./\\'" ":~/" dir)
+                  dir))
+      (if (jcode--local-remote-source-p dir) "~/" dir))))
+
+(defun jcode--queryable-list-source-directory-p (directory)
+  "Return non-nil when aggregate refresh may query DIRECTORY.
+Local sources are always queryable.  Remote sources are queryable only
+when their TRAMP connection process is already live.  This function must not
+run filesystem operations such as `file-directory-p' or `directory-files'
+on stale remotes,
+because those operations can start or restart TRAMP connections."
+  (let ((directory (jcode--normalize-list-source-directory directory)))
+    (or (not (file-remote-p directory))
+        (jcode--remote-source-live-p directory))))
+
+(defun jcode--queryable-list-source-directories (directories)
+  "Return normalized DIRECTORIES safe for aggregate refresh queries."
+  (cl-remove-if-not #'jcode--queryable-list-source-directory-p
+                    (jcode--dedupe-list-source-directories directories)))
 
 (defun jcode--list-source-remote-key-for-tramp-vec (vec)
   "Return aggregate host identity key for TRAMP VEC.
@@ -477,7 +510,8 @@ to the same remote jcode daemon and should be queried once."
 (defun jcode-list-sessions-data-aggregate (&optional directories)
   "Return session metadata aggregated across DIRECTORIES' hosts."
   (sort
-   (cl-loop for directory in (or directories (jcode-list-source-directories default-directory))
+   (cl-loop for directory in (jcode--queryable-list-source-directories
+                              (or directories (jcode-list-source-directories default-directory)))
             append (mapcar (lambda (info)
                              (setf (jcode-session-info-source-directory info) directory)
                              info)
@@ -599,7 +633,10 @@ When ONLY-CURRENT-DIRECTORY is non-nil, require matching `working_dir'."
   (setq tabulated-list-entries
         (mapcar #'jcode--session-list-entry
                 (if jcode--session-list-directories
-                    (jcode-list-sessions-data-aggregate jcode--session-list-directories)
+                    (progn
+                      (setq jcode--session-list-directories
+                            (jcode-list-source-directories jcode--session-list-directory))
+                      (jcode-list-sessions-data-aggregate jcode--session-list-directories))
                   (jcode-list-sessions-data jcode--session-list-directory))))
   (tabulated-list-print t))
 
