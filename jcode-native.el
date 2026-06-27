@@ -464,6 +464,7 @@ and STATE is \"on\" or \"off\"."
          (messages (append (alist-get 'messages event) nil))
          (history-size (length (prin1-to-string messages))))
     (jcode-native--remember-compacted-history connection event)
+    (jcode--session-set-display-native connection event)
     (unless (equal history-size (jcode-native-connection-last-history-size connection))
       (setf (jcode-native-connection-last-history-size connection) history-size)
       (when (and (buffer-live-p input) (fboundp 'jcode-seed-input-history))
@@ -475,7 +476,6 @@ and STATE is \"on\" or \"off\"."
                              (alist-get 'content message)))
                          messages)))))
       (jcode--clear-chat-buffer chat)
-      (jcode--session-set-display-native connection event)
       (mapc (lambda (message) (jcode-native--render-history-message chat message))
             messages))))
 

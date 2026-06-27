@@ -1244,6 +1244,34 @@
     (should (equal (jcode-native-socket-path "/ssh:test-host:/tmp/project/")
                    "/ssh:test-host:/run/user/1000/jcode.sock"))))
 
+(ert-deftest jcode-native-history-refreshes-metadata-when-messages-unchanged ()
+  (let* ((chat (generate-new-buffer " *jcode-test-history-metadata-chat*"))
+         (input (generate-new-buffer " *jcode-test-history-metadata-input*"))
+         (connection (jcode--make-native-connection
+                      :chat chat :input input :session-id "s1" :cwd default-directory
+                      :last-history-size (length (prin1-to-string [])))))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (jcode-native--render-history
+           connection
+           '((type . "history")
+             (session_id . "s1")
+             (messages . [])
+             (provider_name . "OpenAI")
+             (provider_model . "gpt-5.5")
+             (reasoning_effort . "low")
+             (service_tier . "off")))
+          (dolist (buffer (list chat input))
+            (with-current-buffer buffer
+              (should (equal jcode--display-provider "OpenAI"))
+              (should (equal jcode--display-model "gpt-5.5"))
+              (should (equal jcode--display-reasoning-effort "low"))
+              (should (equal jcode--display-service-tier "off")))))
+      (kill-buffer chat)
+      (kill-buffer input))))
+
 (ert-deftest jcode-native-host-local-socket-path-strips-tramp-prefix ()
   (should (equal (jcode-native--host-local-socket-path
                   "/ssh:test-host:/run/user/4242/jcode.sock"
