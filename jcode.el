@@ -209,7 +209,8 @@ multiple sessions can be launched for the same project."
       (when session-id
         (jcode-apply-session-info-to-buffers session-id chat input))
       (jcode--display-buffers chat input)
-      (unless (buffer-local-value 'jcode--native-connection chat)
+      (when (and session-id
+                 (not (buffer-local-value 'jcode--native-connection chat)))
         (jcode-native-open-session session-id dir chat input))
       chat)))
 
