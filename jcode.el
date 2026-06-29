@@ -36,6 +36,7 @@
 (declare-function jcode-native-open-session "jcode-native"
                   (session-id cwd chat input))
 (declare-function jcode-native-close "jcode-native" (connection))
+(declare-function jcode-native-apply-configured-display-defaults "jcode-native" (&rest buffers))
 
 (defun jcode--get-chat-buffer ()
   "Return the chat buffer for the current jcode session.
@@ -213,9 +214,10 @@ multiple sessions can be launched for the same project."
                      (jcode--current-buffer-pair))))
       (jcode--show-session-buffers (car pair) (cdr pair))
     (let* ((dir (jcode--project-directory))
-         (buffers (jcode--make-buffers dir session-id))
-         (chat (car buffers))
-         (input (cdr buffers)))
+           (buffers (jcode--make-buffers dir session-id))
+           (chat (car buffers))
+           (input (cdr buffers)))
+      (jcode-native-apply-configured-display-defaults chat input)
       (when session-id
         (jcode-apply-session-info-to-buffers session-id chat input))
       (jcode--display-buffers chat input)

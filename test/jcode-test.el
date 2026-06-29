@@ -796,6 +796,58 @@
       (kill-buffer chat)
       (kill-buffer input))))
 
+(ert-deftest jcode-make-buffers-preserves-existing-chat-state ()
+  (let* ((dir temporary-file-directory)
+         (session-id "preserve-state")
+         (buffers (jcode--make-buffers dir session-id))
+         (chat (car buffers))
+         (input (cdr buffers))
+         (connection (jcode--make-native-connection :chat chat :input input)))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (setq jcode--native-connection connection)
+            (jcode--set-display-metadata chat :provider "openai" :owner 'owned))
+          (jcode--make-buffers dir session-id)
+          (with-current-buffer chat
+            (should (eq jcode--native-connection connection))
+            (should (equal jcode--display-provider "openai"))
+            (should (eq jcode--display-owner 'owned))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-lazy-buffers-show-configured-provider-before-connect ()
+  (let ((config (make-temp-file "jcode-config" nil ".toml"))
+        shown-chat shown-input opened)
+    (unwind-protect
+        (progn
+          (with-temp-file config
+            (insert "[provider]\n")
+            (insert "default_provider = \"openai-api\"\n")
+            (insert "default_model = \"openai:gpt-5.5\"\n")
+            (insert "openai_reasoning_effort = \"high\"\n"))
+          (let ((jcode-config-file config))
+            (cl-letf (((symbol-function 'jcode--project-directory)
+                       (lambda () temporary-file-directory))
+                      ((symbol-function 'jcode--display-buffers)
+                       (lambda (chat input)
+                         (setq shown-chat chat
+                               shown-input input)))
+                      ((symbol-function 'jcode-native-open-session)
+                       (lambda (&rest _args) (setq opened t))))
+              (jcode)))
+          (should-not opened)
+          (with-current-buffer shown-input
+            (should (equal jcode--display-provider "openai"))
+            (should (equal jcode--display-credential "api-key"))
+            (should (equal jcode--display-model "gpt-5.5"))
+            (should (equal jcode--display-reasoning-effort "high")))
+          (with-current-buffer shown-chat
+            (should (equal jcode--display-provider "openai"))))
+      (delete-file config)
+      (when (buffer-live-p shown-chat) (kill-buffer shown-chat))
+      (when (buffer-live-p shown-input) (kill-buffer shown-input)))))
+
 (ert-deftest jcode-command-from-chat-recovers-input-backlink ()
   (let ((chat (generate-new-buffer " *jcode-test-stale-command-chat*"))
         (input (generate-new-buffer " *jcode-test-stale-command-input*"))

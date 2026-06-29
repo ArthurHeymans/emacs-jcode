@@ -546,7 +546,8 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
   (let ((chat (get-buffer-create (jcode--buffer-name "chat" dir session-id)))
         (input (get-buffer-create (jcode--buffer-name "input" dir session-id))))
     (with-current-buffer chat
-      (jcode-chat-mode)
+      (unless (derived-mode-p 'jcode-chat-mode)
+        (jcode-chat-mode))
       (setq default-directory dir)
       (setq jcode--input-buffer input))
     (with-current-buffer input

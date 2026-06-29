@@ -243,6 +243,21 @@ When VALUE is nil, remove KEY from the provider section."
              credential "api-key")))
     (list provider credential model)))
 
+(defun jcode-native-apply-configured-display-defaults (&rest buffers)
+  "Apply configured provider/model defaults to BUFFERS for initial display.
+This gives lazy, not-yet-connected buffers useful header state before the
+daemon sends authoritative session metadata.  Existing non-nil buffer-local
+metadata is preserved by `jcode--set-display-metadata'."
+  (pcase-let ((`(,configured-provider ,configured-credential ,configured-model)
+               (jcode-native--configured-provider-display)))
+    (dolist (buffer buffers)
+      (jcode--set-display-metadata
+       buffer
+       :provider configured-provider
+       :credential configured-credential
+       :model configured-model
+       :reasoning-effort (jcode-native--configured-reasoning-effort)))))
+
 (defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
   (let* ((directory (or directory default-directory))
@@ -874,16 +889,11 @@ When VALUE is nil, remove KEY from the provider section."
                             #'jcode-native--poll connection)))
     (setf (jcode-native-connection-takeover connection)
           jcode-native-take-over-active-session)
-    (pcase-let ((`(,configured-provider ,configured-credential ,configured-model)
-                 (jcode-native--configured-provider-display)))
-      (dolist (buffer (list chat input))
-        (jcode--set-display-metadata
-         buffer
-         :owner (if jcode-native-take-over-active-session 'owned 'viewing)
-         :provider configured-provider
-         :credential configured-credential
-         :model configured-model
-         :reasoning-effort (jcode-native--configured-reasoning-effort))))
+    (dolist (buffer (list chat input))
+      (jcode--set-display-metadata
+       buffer
+       :owner (if jcode-native-take-over-active-session 'owned 'viewing)))
+    (jcode-native-apply-configured-display-defaults chat input)
     (jcode-native--schedule-session-id-discovery connection)
     (jcode-native-apply-defaults connection)
     connection))
