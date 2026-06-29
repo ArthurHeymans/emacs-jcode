@@ -708,18 +708,20 @@ Streaming appends otherwise can leave raw markup visible until idle refontify."
   "Decorate jcode turn headings between START and END.
 Hide the setext underline markup and restore the dedicated marker face on the
 visible heading text after markdown fontification."
-  (save-excursion
-    (goto-char (max (point-min) start))
-    (while (re-search-forward "^\\(You\\|Assistant\\)\n\\(=+\\)$" end t)
-      (add-text-properties (match-beginning 1) (match-end 1)
-                           `(face ,(if (equal (match-string 1) "You")
-                                       'jcode-user-face
-                                     'jcode-assistant-face)
-                             rear-nonsticky (face)))
-      (add-text-properties (match-beginning 2) (match-end 2)
-                           '(invisible jcode-markup
-                             display ""
-                             rear-nonsticky (face invisible display))))))
+  (let ((inhibit-read-only t)
+        (buffer-read-only nil))
+    (save-excursion
+      (goto-char (max (point-min) start))
+      (while (re-search-forward "^\\(You\\|Assistant\\)\n\\(=+\\)$" end t)
+        (add-text-properties (match-beginning 1) (match-end 1)
+                             `(face ,(if (equal (match-string 1) "You")
+                                         'jcode-user-face
+                                       'jcode-assistant-face)
+                               rear-nonsticky (face)))
+        (add-text-properties (match-beginning 2) (match-end 2)
+                             '(invisible jcode-markup
+                               display " "
+                               rear-nonsticky (face invisible display)))))))
 
 (defun jcode--redecorate-chat-buffers ()
   "Refresh jcode-specific text properties in existing chat buffers."
@@ -762,7 +764,7 @@ visible heading text after markdown fontification."
                        title))
             (underline (propertize (make-string (length title) ?=)
                                    'invisible 'jcode-markup
-                                   'display ""
+                                   'display " "
                                    'rear-nonsticky '(face invisible display))))
        (insert prefix heading "\n" underline "\n")))))
 

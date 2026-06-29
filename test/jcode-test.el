@@ -389,7 +389,7 @@
             (goto-char (point-min))
             (search-forward "=========")
             (should (get-text-property (match-beginning 0) 'invisible))
-            (should (equal (get-text-property (match-beginning 0) 'display) ""))))
+            (should (equal (get-text-property (match-beginning 0) 'display) " "))))
       (kill-buffer chat))))
 
 (ert-deftest jcode-turn-heading-labels-keep-marker-faces-after-fontification ()
