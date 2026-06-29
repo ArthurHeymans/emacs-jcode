@@ -1202,6 +1202,8 @@
                  (setq network-args args)
                  (let ((default-directory "/"))
                    (start-process "jcode-test-cat" nil "cat"))))
+              ((symbol-function 'jcode-native--local-socket-available-p)
+               (lambda (_socket) t))
               ((symbol-function 'start-file-process)
                (lambda (&rest _args) (setq started-file t))))
       (let ((proc (jcode-native--open-process "/tmp/project/" "/run/user/1000/jcode.sock")))
@@ -1212,8 +1214,26 @@
               (should (eq (plist-get network-args :family) 'local))
               (should (equal (plist-get network-args :service)
                              "/run/user/1000/jcode.sock")))
-          (when (process-live-p proc)
-            (delete-process proc)))))))
+	  (when (process-live-p proc)
+	    (delete-process proc)))))))
+
+(ert-deftest jcode-native-open-process-local-errors-when-socket-missing ()
+  (cl-letf (((symbol-function 'jcode-native--local-socket-available-p)
+             (lambda (_socket) nil))
+            ((symbol-function 'make-network-process)
+             (lambda (&rest _args) (error "should not connect"))))
+    (should-error
+     (jcode-native--open-process "/tmp/project/" "/run/user/1000/jcode.sock")
+     :type 'user-error)))
+
+(ert-deftest jcode-native-open-process-local-wraps-connect-failure ()
+  (cl-letf (((symbol-function 'jcode-native--local-socket-available-p)
+             (lambda (_socket) t))
+            ((symbol-function 'make-network-process)
+             (lambda (&rest _args) (signal 'file-error '("No such file or directory")))))
+    (should-error
+     (jcode-native--open-process "/tmp/project/" "/run/user/1000/jcode.sock")
+     :type 'user-error)))
 
 (ert-deftest jcode-native-open-session-polls-only-passive-connections ()
   (let ((chat (generate-new-buffer " *jcode-test-poll-chat*"))

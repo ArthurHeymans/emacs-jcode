@@ -293,6 +293,10 @@ When VALUE is nil, remove KEY from the provider section."
   "Return non-nil if remote SOCKET exists and is readable enough to connect."
   (ignore-errors (file-exists-p socket)))
 
+(defun jcode-native--local-socket-available-p (socket)
+  "Return non-nil if local SOCKET exists."
+  (ignore-errors (file-exists-p socket)))
+
 (defun jcode-native--open-process (cwd socket)
   "Open a native protocol process for CWD using SOCKET."
   (if (file-remote-p cwd)
@@ -314,12 +318,22 @@ When VALUE is nil, remove KEY from the provider section."
         (set-process-coding-system proc 'utf-8-emacs-unix 'utf-8-emacs-unix)
         (set-process-query-on-exit-flag proc nil)
         proc)
-    (make-network-process :name "jcode-native"
-                          :buffer (generate-new-buffer " *jcode-native* ")
-                          :family 'local
-                          :service socket
-                          :coding 'utf-8-emacs-unix
-                          :noquery t)))
+    (unless (jcode-native--local-socket-available-p socket)
+      (user-error "Cannot open jcode: no daemon socket at %s. Start jcode first, then run M-x jcode-reconnect"
+                  socket))
+    (condition-case err
+        (make-network-process :name "jcode-native"
+                              :buffer (generate-new-buffer " *jcode-native* ")
+                              :family 'local
+                              :service socket
+                              :coding 'utf-8-emacs-unix
+                              :noquery t)
+      (file-error
+       (user-error "Cannot open jcode daemon socket at %s: %s. Start or restart jcode, then run M-x jcode-reconnect"
+                   socket (error-message-string err)))
+      (error
+       (user-error "Cannot open jcode daemon socket at %s: %s"
+                   socket (error-message-string err))))))
 
 (defun jcode-native--json-read (line)
   "Read native protocol JSON LINE."
