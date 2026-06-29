@@ -251,12 +251,15 @@ metadata is preserved by `jcode--set-display-metadata'."
   (pcase-let ((`(,configured-provider ,configured-credential ,configured-model)
                (jcode-native--configured-provider-display)))
     (dolist (buffer buffers)
-      (jcode--set-display-metadata
-       buffer
-       :provider configured-provider
-       :credential configured-credential
-       :model configured-model
-       :reasoning-effort (jcode-native--configured-reasoning-effort)))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (jcode--set-display-metadata
+           buffer
+           :provider (and (not jcode--display-provider) configured-provider)
+           :credential (and (not jcode--display-credential) configured-credential)
+           :model (and (not jcode--display-model) configured-model)
+           :reasoning-effort (and (not jcode--display-reasoning-effort)
+                                  (jcode-native--configured-reasoning-effort))))))))
 
 (defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
@@ -461,6 +464,14 @@ metadata is preserved by `jcode--set-display-metadata'."
                                :feature feature
                                :enabled (if (equal state "on") t :false))))))
 
+(defun jcode-native-apply-buffer-defaults (connection)
+  "Apply pending buffer-local defaults to newly connected CONNECTION."
+  (let* ((chat (jcode-native-connection-chat connection))
+         (effort (and (buffer-live-p chat)
+                      (buffer-local-value 'jcode--display-reasoning-effort chat))))
+    (when (and effort (member effort jcode-native-reasoning-efforts))
+      (jcode-native-set-reasoning-effort connection effort))))
+
 (defun jcode-native-set-reasoning-effort (connection effort)
   "Set CONNECTION's reasoning EFFORT."
   (jcode-native--request connection "set_reasoning_effort" :effort effort
@@ -503,32 +514,38 @@ metadata is preserved by `jcode--set-display-metadata'."
   "Cycle native jcode reasoning effort from the header."
   (interactive)
   (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
-         (connection (or (buffer-local-value 'jcode--native-connection chat)
-                         (user-error "No native jcode connection")))
+         (connection (buffer-local-value 'jcode--native-connection chat))
+         (input (or (and connection (jcode-native-connection-input connection))
+                    (buffer-local-value 'jcode--input-buffer chat)))
          (current (or (buffer-local-value 'jcode--display-reasoning-effort chat) "none"))
          (tail (member current jcode-native-reasoning-efforts))
          (next (or (cadr tail) (car jcode-native-reasoning-efforts))))
-    (jcode-native-set-reasoning-effort connection next)
-    (dolist (buffer (list chat (jcode-native-connection-input connection)))
+    (when connection
+      (jcode-native-set-reasoning-effort connection next))
+    (dolist (buffer (list chat input))
       (jcode--set-display-metadata buffer :reasoning-effort next))
-    (message "Jcode: Reasoning effort %s" next)))
+    (message "Jcode: Reasoning effort %s%s"
+             next (if connection "" " (will apply when session starts)"))))
 
 (defun jcode-select-reasoning-effort (&optional effort)
   "Select native jcode reasoning EFFORT using completion."
   (interactive)
   (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
-         (connection (or (buffer-local-value 'jcode--native-connection chat)
-                         (user-error "No native jcode connection")))
+         (connection (buffer-local-value 'jcode--native-connection chat))
+         (input (or (and connection (jcode-native-connection-input connection))
+                    (buffer-local-value 'jcode--input-buffer chat)))
          (current (or (buffer-local-value 'jcode--display-reasoning-effort chat) "none"))
          (choice (or effort
                      (completing-read
                       (format "Reasoning effort (current: %s): " current)
                       jcode-native-reasoning-efforts nil t nil nil current))))
     (unless (string-empty-p choice)
-      (jcode-native-set-reasoning-effort connection choice)
-      (dolist (buffer (list chat (jcode-native-connection-input connection)))
+      (when connection
+        (jcode-native-set-reasoning-effort connection choice))
+      (dolist (buffer (list chat input))
         (jcode--set-display-metadata buffer :reasoning-effort choice))
-      (message "Jcode: Reasoning effort %s" choice))))
+      (message "Jcode: Reasoning effort %s%s"
+               choice (if connection "" " (will apply when session starts)")))))
 
 (defvar jcode-native-service-tiers '("off" "priority")
   "Native jcode service tiers exposed in the Emacs selector.")
@@ -896,6 +913,7 @@ metadata is preserved by `jcode--set-display-metadata'."
     (jcode-native-apply-configured-display-defaults chat input)
     (jcode-native--schedule-session-id-discovery connection)
     (jcode-native-apply-defaults connection)
+    (jcode-native-apply-buffer-defaults connection)
     connection))
 
 (provide 'jcode-native)

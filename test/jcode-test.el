@@ -848,6 +848,45 @@
       (when (buffer-live-p shown-chat) (kill-buffer shown-chat))
       (when (buffer-live-p shown-input) (kill-buffer shown-input)))))
 
+(ert-deftest jcode-select-reasoning-effort-before-connect-is-pending ()
+  (let* ((dir temporary-file-directory)
+         (buffers (jcode--make-buffers dir "pending-effort"))
+         (chat (car buffers))
+         (input (cdr buffers))
+         sent)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'jcode-native-set-reasoning-effort)
+                     (lambda (&rest args) (setq sent args))))
+            (with-current-buffer input
+              (jcode-select-reasoning-effort "high")))
+          (should-not sent)
+          (with-current-buffer chat
+            (should (equal jcode--display-reasoning-effort "high")))
+          (with-current-buffer input
+            (should (equal jcode--display-reasoning-effort "high"))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-open-applies-pending-buffer-reasoning-effort ()
+  (let ((chat (generate-new-buffer " *jcode-test-pending-effort-chat*"))
+        (input (generate-new-buffer " *jcode-test-pending-effort-input*"))
+        sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (jcode--set-display-metadata chat :reasoning-effort "xhigh"))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (cl-letf (((symbol-function 'jcode-native--request)
+                       (lambda (_connection type &rest fields)
+                         (push (cons type fields) sent))))
+              (jcode-native-apply-buffer-defaults connection)))
+          (should (member '("set_reasoning_effort" :effort "xhigh" :target_session_id nil) sent)))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-command-from-chat-recovers-input-backlink ()
   (let ((chat (generate-new-buffer " *jcode-test-stale-command-chat*"))
         (input (generate-new-buffer " *jcode-test-stale-command-input*"))
