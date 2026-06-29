@@ -971,10 +971,24 @@
     (jcode-input-mode)
     (should (memq #'jcode--file-reference-capf completion-at-point-functions))
     (should (memq #'jcode--path-capf completion-at-point-functions))
+    (should (equal completion-at-point-functions
+                   '(jcode--path-capf jcode--file-reference-capf jcode--slash-command-capf)))
     (should (eq (key-binding (kbd "TAB")) #'jcode-complete))
     (should (eq (key-binding (kbd "C-c C-s")) #'jcode-steer))
     (should (eq (key-binding (kbd "@")) #'self-insert-command))
     (should (eq (key-binding (kbd "/")) #'self-insert-command))))
+
+(ert-deftest jcode-input-mode-removes-external-capfs ()
+  (let ((jcode-input-mode-hook jcode-input-mode-hook))
+    (add-hook 'jcode-input-mode-hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions #'yasnippet-capf nil t))
+              0)
+    (with-temp-buffer
+      (jcode-input-mode)
+      (should-not (memq #'yasnippet-capf completion-at-point-functions))
+      (should (equal completion-at-point-functions
+                     '(jcode--path-capf jcode--file-reference-capf jcode--slash-command-capf))))))
 
 (ert-deftest jcode-file-reference-capf-completes-after-at ()
   (with-temp-buffer

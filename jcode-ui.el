@@ -34,6 +34,23 @@
 (declare-function jcode--maybe-complete-at "jcode-input")
 (declare-function jcode--slash-command-capf "jcode-menu")
 
+(defconst jcode--input-capfs
+  '(jcode--slash-command-capf jcode--file-reference-capf jcode--path-capf)
+  "Completion-at-point functions intentionally enabled in `jcode-input-mode'.")
+
+(defun jcode--sanitize-input-capfs ()
+  "Keep `jcode-input-mode' completion isolated from unrelated CAPFs.
+
+Some global completion setups add CAPFs such as `yasnippet-capf' from major
+mode hooks.  In jcode prompt buffers those providers are both unnecessary and
+can signal timer-time errors through Corfu, so keep only jcode's prompt
+completion functions locally."
+  (when (derived-mode-p 'jcode-input-mode)
+    (setq-local completion-at-point-functions
+                (cl-remove-if-not (lambda (capf)
+                                    (memq capf jcode--input-capfs))
+                                  completion-at-point-functions))))
+
 (defgroup jcode nil
   "Emacs frontend for jcode."
   :group 'tools
@@ -472,6 +489,8 @@ Derives from `md-ts-mode' when available for tree-sitter markdown rendering."
   (add-hook 'post-self-insert-hook #'jcode--maybe-complete-at nil t)
   (add-hook 'isearch-mode-hook #'jcode--history-isearch-setup nil t)
   (add-hook 'kill-buffer-hook #'jcode--kill-linked-buffer nil t))
+
+(add-hook 'jcode-input-mode-hook #'jcode--sanitize-input-capfs 100)
 
 (defun jcode--clear-chat-buffer (chat)
   "Erase CHAT buffer contents."
