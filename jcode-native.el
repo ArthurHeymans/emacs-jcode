@@ -259,7 +259,9 @@ metadata is preserved by `jcode--set-display-metadata'."
            :credential (and (not jcode--display-credential) configured-credential)
            :model (and (not jcode--display-model) configured-model)
            :reasoning-effort (and (not jcode--display-reasoning-effort)
-                                  (jcode-native--configured-reasoning-effort))))))))
+                                  (jcode-native--configured-reasoning-effort))
+           :service-tier (and (not jcode--display-service-tier)
+                              jcode-default-service-tier)))))))
 
 (defun jcode-native-socket-path (&optional directory)
   "Return best native jcode socket path for DIRECTORY's host."
@@ -468,9 +470,13 @@ metadata is preserved by `jcode--set-display-metadata'."
   "Apply pending buffer-local defaults to newly connected CONNECTION."
   (let* ((chat (jcode-native-connection-chat connection))
          (effort (and (buffer-live-p chat)
-                      (buffer-local-value 'jcode--display-reasoning-effort chat))))
+                      (buffer-local-value 'jcode--display-reasoning-effort chat)))
+         (service-tier (and (buffer-live-p chat)
+                            (buffer-local-value 'jcode--display-service-tier chat))))
     (when (and effort (member effort jcode-native-reasoning-efforts))
-      (jcode-native-set-reasoning-effort connection effort))))
+      (jcode-native-set-reasoning-effort connection effort))
+    (when service-tier
+      (jcode-native-set-service-tier connection service-tier))))
 
 (defun jcode-native-set-reasoning-effort (connection effort)
   "Set CONNECTION's reasoning EFFORT."
@@ -554,8 +560,9 @@ metadata is preserved by `jcode--set-display-metadata'."
   "Select native jcode fast/service SERVICE-TIER using completion."
   (interactive)
   (let* ((chat (or (jcode-native--current-chat) (user-error "No jcode session")))
-         (connection (or (buffer-local-value 'jcode--native-connection chat)
-                         (user-error "No native jcode connection")))
+         (connection (buffer-local-value 'jcode--native-connection chat))
+         (input (or (and connection (jcode-native-connection-input connection))
+                    (buffer-local-value 'jcode--input-buffer chat)))
          (current (buffer-local-value 'jcode--display-service-tier chat))
          (current-label (or (and current (format "%s" current)) "off"))
          (choice (or service-tier
@@ -563,10 +570,13 @@ metadata is preserved by `jcode--set-display-metadata'."
                       (format "Fast/service tier (current: %s): " current-label)
                       jcode-native-service-tiers nil t nil nil current-label))))
     (unless (string-empty-p choice)
-      (jcode-native-set-service-tier connection choice)
-      (dolist (buffer (list chat (jcode-native-connection-input connection)))
+      (when connection
+        (jcode-native-set-service-tier connection choice))
+      (dolist (buffer (list chat input))
         (jcode--set-display-metadata buffer :service-tier choice))
-      (message "Jcode: fast mode %s" (if (member choice '("priority" "fast")) "on" "off")))))
+      (message "Jcode: fast mode %s%s"
+               (if (member choice '("priority" "fast")) "on" "off")
+               (if connection "" " (will apply when session starts)")))))
 
 (defun jcode-native--drain-followup (connection)
   "Send next queued follow-up for CONNECTION, if any."
@@ -714,7 +724,7 @@ metadata is preserved by `jcode--set-display-metadata'."
         (provider (alist-get 'provider_name event))
         (server (alist-get 'server_name event))
         (reasoning (alist-get 'reasoning_effort event))
-        (service-tier (alist-get 'service_tier event))
+        (service-tier (or (alist-get 'service_tier event) "off"))
         (transport (alist-get 'transport event))
         (compaction-mode (alist-get 'compaction_mode event))
         (credential (alist-get 'resolved_credential event))

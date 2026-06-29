@@ -887,6 +887,61 @@
       (when (buffer-live-p chat) (kill-buffer chat))
       (when (buffer-live-p input) (kill-buffer input)))))
 
+(ert-deftest jcode-select-fast-mode-before-connect-is-pending ()
+  (let* ((dir temporary-file-directory)
+         (buffers (jcode--make-buffers dir "pending-fast"))
+         (chat (car buffers))
+         (input (cdr buffers))
+         sent)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'jcode-native-set-service-tier)
+                     (lambda (&rest args) (setq sent args))))
+            (with-current-buffer input
+              (jcode-select-fast-mode "priority")))
+          (should-not sent)
+          (with-current-buffer chat
+            (should (equal jcode--display-service-tier "priority")))
+          (with-current-buffer input
+            (should (equal jcode--display-service-tier "priority"))
+            (should (string-match-p "fast on" (jcode--header-line)))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-open-applies-pending-buffer-service-tier ()
+  (let ((chat (generate-new-buffer " *jcode-test-pending-fast-chat*"))
+        (input (generate-new-buffer " *jcode-test-pending-fast-input*"))
+        sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (jcode-chat-mode)
+            (jcode--set-display-metadata chat :service-tier "priority"))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (cl-letf (((symbol-function 'jcode-native--request)
+                       (lambda (_connection type &rest fields)
+                         (push (cons type fields) sent))))
+              (jcode-native-apply-buffer-defaults connection)))
+          (should (member '("set_service_tier" :service_tier "priority") sent)))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
+(ert-deftest jcode-native-metadata-defaults-missing-service-tier-to-off ()
+  (let ((chat (generate-new-buffer " *jcode-test-metadata-fast-chat*"))
+        (input (generate-new-buffer " *jcode-test-metadata-fast-input*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer chat (jcode-chat-mode))
+          (with-current-buffer input (jcode-input-mode))
+          (let ((connection (jcode--make-native-connection :chat chat :input input)))
+            (jcode--session-set-display-native connection '((type . "history"))))
+          (with-current-buffer input
+            (should (equal jcode--display-service-tier "off"))
+            (should (string-match-p "fast off" (jcode--header-line)))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (when (buffer-live-p input) (kill-buffer input)))))
+
 (ert-deftest jcode-command-from-chat-recovers-input-backlink ()
   (let ((chat (generate-new-buffer " *jcode-test-stale-command-chat*"))
         (input (generate-new-buffer " *jcode-test-stale-command-input*"))
