@@ -269,7 +269,8 @@ multiple sessions can be launched for the same project."
    (list (when current-prefix-arg
            (read-string "Session name: "))))
   (if-let ((pair (and (not session-id)
-                     (jcode--current-buffer-pair))))
+                     (or (jcode--current-buffer-pair)
+                         (jcode--pair-from-project-buffers)))))
       (jcode--show-session-buffers (car pair) (cdr pair))
     (let* ((dir (jcode--project-directory))
            (buffers (if session-id
