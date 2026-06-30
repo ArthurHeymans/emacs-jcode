@@ -98,14 +98,10 @@ Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
         (when (and (buffer-live-p chat)
                    (with-current-buffer chat
                      (and (derived-mode-p 'jcode-chat-mode)
-                          (or (and (equal jcode--display-session-id session-id)
-                                   (or (not working-dir)
-                                       (string= (jcode--normalize-directory default-directory)
-                                                (jcode--normalize-directory working-dir))))
-                              (and (not jcode--display-session-id)
-                                   (stringp working-dir)
-                                   (string= (jcode--normalize-directory default-directory)
-                                            (jcode--normalize-directory working-dir)))))))
+                          (equal jcode--display-session-id session-id)
+                          (or (not working-dir)
+                              (string= (jcode--normalize-directory default-directory)
+                                       (jcode--normalize-directory working-dir))))))
           (when-let ((input (or (buffer-local-value 'jcode--input-buffer chat)
                                 (jcode--input-buffer-for-chat chat))))
             (when (buffer-live-p input)
@@ -115,6 +111,68 @@ Works from either a jcode chat or input buffer, mirroring pi-coding-agent."
               (when-let ((native (buffer-local-value 'jcode--native-connection chat)))
                 (setf (jcode-native-connection-session-id native) session-id))
               (throw 'pair (cons chat input)))))))))
+
+(defun jcode--buffer-nonempty-p (buffer)
+  "Return non-nil when BUFFER has user-visible content."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (> (buffer-size) 0))))
+
+(defun jcode--retitle-session-buffer-pair (chat input)
+  "Rename session-bound CHAT and INPUT away from the project default names."
+  (when (buffer-live-p chat)
+    (with-current-buffer chat
+      (jcode--rename-display-buffers
+       chat input (or jcode--display-title jcode--display-session-id "active session")))))
+
+(defun jcode--prepare-new-project-session-buffers (dir)
+  "Return clean project-default buffers for a new lazy session in DIR.
+If the project-default buffer names currently hold a resumed or connected
+session, first rename that pair to its session-specific title so `jcode' and
+`jcode-new-session' can use the default project window again."
+  (let* ((chat-name (jcode--buffer-name "chat" dir nil))
+         (input-name (jcode--buffer-name "input" dir nil))
+         (chat (get-buffer chat-name))
+         (input (or (and (buffer-live-p chat)
+                         (buffer-local-value 'jcode--input-buffer chat))
+                    (get-buffer input-name))))
+    (when (and (buffer-live-p chat)
+               (with-current-buffer chat
+                 (or jcode--display-session-id
+                     jcode--native-connection
+                     jcode--session)))
+      (jcode--retitle-session-buffer-pair chat input))
+    (jcode--make-buffers dir nil)))
+
+(defun jcode--reset-lazy-buffer-pair (chat input)
+  "Reset CHAT and INPUT to an empty, not-yet-connected lazy session."
+  (when (buffer-live-p chat)
+    (with-current-buffer chat
+      (let ((inhibit-read-only t)
+            (buffer-read-only nil))
+        (erase-buffer))
+      (setq jcode--session nil
+            jcode--native-connection nil
+            jcode--display-session-id nil
+            jcode--display-title nil
+            jcode--display-status nil
+            jcode--display-total-tokens nil
+            jcode--display-token-usage-totals nil
+            jcode--display-context-window nil
+            jcode--display-activity nil)))
+  (when (buffer-live-p input)
+    (with-current-buffer input
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (setq jcode--session nil
+            jcode--native-connection nil
+            jcode--display-session-id nil
+            jcode--display-title nil
+            jcode--display-status nil
+            jcode--display-total-tokens nil
+            jcode--display-token-usage-totals nil
+            jcode--display-context-window nil
+            jcode--display-activity nil))))
 
 (defun jcode-project-buffers (&optional directory)
   "Return live jcode chat buffers for DIRECTORY's project.
@@ -214,7 +272,9 @@ multiple sessions can be launched for the same project."
                      (jcode--current-buffer-pair))))
       (jcode--show-session-buffers (car pair) (cdr pair))
     (let* ((dir (jcode--project-directory))
-           (buffers (jcode--make-buffers dir session-id))
+           (buffers (if session-id
+                        (jcode--make-buffers dir session-id)
+                      (jcode--prepare-new-project-session-buffers dir)))
            (chat (car buffers))
            (input (cdr buffers)))
       (jcode-native-apply-configured-display-defaults chat input)
@@ -225,6 +285,24 @@ multiple sessions can be launched for the same project."
                  (not (buffer-local-value 'jcode--native-connection chat)))
         (jcode-native-open-session session-id dir chat input))
       chat)))
+
+;;;###autoload
+(defun jcode-new-session ()
+  "Open a fresh lazy jcode session for the current project.
+This mirrors Pi's transient-menu `new' action: it keeps resumed sessions in
+their own session-specific buffers, then opens the project-default chat/input
+pair with no native connection or persisted session id."
+  (interactive)
+  (let* ((dir (jcode--project-directory))
+         (buffers (jcode--prepare-new-project-session-buffers dir))
+         (chat (car buffers))
+         (input (cdr buffers)))
+    (when (or (jcode--buffer-nonempty-p chat)
+              (jcode--buffer-nonempty-p input))
+      (jcode--reset-lazy-buffer-pair chat input))
+    (jcode-native-apply-configured-display-defaults chat input)
+    (jcode--display-buffers chat input)
+    chat))
 
 ;;;###autoload
 (defun jcode-resume (session-id &optional full-load)

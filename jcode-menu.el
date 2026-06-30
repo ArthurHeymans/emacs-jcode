@@ -11,6 +11,7 @@
 (require 'jcode-input)
 
 (declare-function jcode "jcode")
+(declare-function jcode-new-session "jcode")
 (declare-function jcode-list "jcode")
 (declare-function jcode-reconnect "jcode")
 (declare-function jcode-connect "jcode")
@@ -24,6 +25,7 @@
 (defconst jcode-slash-commands
   '(("/?" . "Open jcode command menu")
     ("/help" . "Open jcode command menu")
+    ("/new" . "Open a fresh project session")
     ("/compact" . "Compact conversation context")
     ("/clear" . "Clear conversation history")
     ("/split" . "Clone this conversation into a new session")
@@ -443,6 +445,7 @@ Use `openai-oauth' to force ChatGPT/Codex OAuth instead of OpenAI API key."
    (list (completing-read "Jcode command: " (mapcar #'car jcode-slash-commands) nil t)))
   (pcase command
     ((or "/?" "/help") (call-interactively #'jcode-menu))
+    ("/new" (jcode-new-session))
     ("/compact" (jcode-compact))
     ("/clear" (jcode-clear))
     ("/split" (jcode-split))
@@ -484,6 +487,7 @@ Use `openai-oauth' to force ChatGPT/Codex OAuth instead of OpenAI API key."
   [:description jcode--menu-description
    ["Session"
     ("j" "open/current" jcode)
+    ("N" "new" jcode-new-session)
     ("l" "list sessions" jcode-list)
     ("r" "reconnect" jcode-reconnect)
     ("a" "attach" jcode-connect)

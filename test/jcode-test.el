@@ -987,6 +987,101 @@
             (kill-buffer input))
           (ignore-errors (delete-directory root t)))))))
 
+(ert-deftest jcode-command-does-not-reuse-resumed-default-project-buffer ()
+  (let* ((root (file-name-as-directory (make-temp-file "jcode-project" t)))
+         (buffers (jcode--make-buffers root nil))
+         (resumed-chat (car buffers))
+         (resumed-input (cdr buffers))
+         shown)
+    (unwind-protect
+        (progn
+          (with-current-buffer resumed-chat
+            (setq default-directory root)
+            (jcode--set-display-metadata resumed-chat
+                                          :session-id "session-resumed"
+                                          :title "Resumed Session"))
+          (with-current-buffer resumed-input
+            (setq default-directory root)
+            (jcode--set-display-metadata resumed-input
+                                          :session-id "session-resumed"
+                                          :title "Resumed Session"))
+          (cl-letf (((symbol-function 'jcode--project-directory) (lambda () root))
+                    ((symbol-function 'jcode--display-buffers)
+                     (lambda (chat input) (setq shown (cons chat input)))))
+            (jcode))
+          (should shown)
+          (should-not (eq (car shown) resumed-chat))
+          (should (equal (buffer-name (car shown)) (jcode--buffer-name "chat" root nil)))
+          (with-current-buffer (car shown)
+            (should-not jcode--display-session-id))
+          (should (string-match-p "Resumed Session"
+                                  (buffer-name resumed-chat))))
+      (dolist (buffer (list resumed-chat resumed-input (car-safe shown) (cdr-safe shown)))
+        (when (buffer-live-p buffer) (kill-buffer buffer)))
+      (delete-directory root t))))
+
+(ert-deftest jcode-resume-does-not-adopt-unidentified-project-default-buffer ()
+  (let* ((root (file-name-as-directory (make-temp-file "jcode-resume" t)))
+         (buffers (jcode--make-buffers root nil))
+         (default-chat (car buffers))
+         (default-input (cdr buffers))
+         opened shown)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'jcode--project-directory) (lambda () root))
+                    ((symbol-function 'jcode--session-info-by-id)
+                     (lambda (_session-id _dir)
+                       (jcode--make-session-info :id "session-a"
+                                                 :working-dir root)))
+                    ((symbol-function 'jcode-native-open-session)
+                     (lambda (&rest _args) (setq opened t)))
+                    ((symbol-function 'jcode-apply-session-info-to-buffers)
+                     (lambda (session-id chat input)
+                       (dolist (buffer (list chat input))
+                         (jcode--set-display-metadata buffer :session-id session-id))))
+                    ((symbol-function 'jcode--display-buffers)
+                     (lambda (chat input) (setq shown (cons chat input)))))
+            (jcode-resume "session-a"))
+          (should opened)
+          (should shown)
+          (should-not (eq (car shown) default-chat))
+          (with-current-buffer default-chat
+            (should-not jcode--display-session-id))
+          (with-current-buffer (car shown)
+            (should (equal jcode--display-session-id "session-a"))))
+      (dolist (buffer (list default-chat default-input (car-safe shown) (cdr-safe shown)))
+        (when (buffer-live-p buffer) (kill-buffer buffer)))
+      (delete-directory root t))))
+
+(ert-deftest jcode-new-session-clears-project-default-buffer ()
+  (let* ((root (file-name-as-directory (make-temp-file "jcode-new" t)))
+         (buffers (jcode--make-buffers root nil))
+         (chat (car buffers))
+         (input (cdr buffers))
+         shown)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (let ((inhibit-read-only t) (buffer-read-only nil))
+              (insert "old text")))
+          (with-current-buffer input (insert "old prompt"))
+          (cl-letf (((symbol-function 'jcode--project-directory) (lambda () root))
+                    ((symbol-function 'jcode--display-buffers)
+                     (lambda (shown-chat shown-input)
+                       (setq shown (cons shown-chat shown-input)))))
+            (jcode-new-session))
+          (should (eq (car shown) chat))
+          (should (eq (cdr shown) input))
+          (with-current-buffer chat
+            (should (= (buffer-size) 0))
+            (should-not jcode--display-session-id)
+            (should-not jcode--native-connection))
+          (with-current-buffer input
+            (should (= (buffer-size) 0))))
+      (dolist (buffer (list chat input))
+        (when (buffer-live-p buffer) (kill-buffer buffer)))
+      (delete-directory root t))))
+
 (ert-deftest jcode-buffer-name-distinguishes-remote-projects ()
   (should (equal (jcode--buffer-name "chat" "/home/me/src/chomp/")
                  "*jcode-chat: chomp*"))
